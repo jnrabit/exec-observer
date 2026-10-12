@@ -15,13 +15,16 @@ now_s() {
 }
 
 # wait_for_content <datei> <muster> [sekunden] – 0, sobald der Dateiinhalt das
-# Muster enthält. $(<...) forkt nicht.
+# Muster enthält. $(<...) forkt nicht. WICHTIG: kein `2>/dev/null` INSIDE —
+# `$(<datei 2>/dev/null)` liefert still leise leer (die Fork-frei-Optimierung
+# greift mit Zusatz-Umleitung nicht). Stattdessen Existenz per Builtin prüfen.
 wait_for_content() { # wait_for_content <datei> <muster> [sekunden]
   local file="$1" pat="$2" end content
   now_s; end=$(( NOW_S + ${3:-10} ))
   while :; do
     now_s; [ "$NOW_S" -ge "$end" ] && return 1
-    content=$(<"$file" 2>/dev/null) || content=""
+    [ -r "$file" ] || continue
+    content=$(<"$file")
     case "$content" in *"$pat"*) return 0;; esac
   done
 }

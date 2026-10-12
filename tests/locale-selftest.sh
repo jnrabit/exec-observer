@@ -51,16 +51,25 @@ check_locale() { # <locale> – now_s muss eine reine Ganzzahl liefern
 check_locale C
 check_locale de_DE.UTF-8
 
-# wait_for_content unter deutschem Locale auf einer Temp-Datei (Verhalten wie C).
+# wait_for_content/wait_for_lines je Locale (Parität C == de_DE): Die Helfer
+# müssen sich unter beiden Locales GLEICH verhalten. (Lehre aus dem ersten
+# Fund: Der wait_for_content-Fehler war locale-UNABHÄNGIG — `$(<datei
+# 2>/dev/null)` liefert still leer; nur de_DE zu prüfen hätte die falsche
+# Schuldzuweisung zementiert.)
 TMPF="$(mktemp "${TMPDIR:-/tmp}/locale-selftest.XXXXXX")" || {
   bad "mktemp fehlgeschlagen"; echo "  Matrix: $PASS pass, $FAIL fail"; [ "$FAIL" -eq 0 ]; exit "$?"; }
 printf 'start\n  {"ev":"start"}\n' >"$TMPF"
-LC_ALL=de_DE.UTF-8 wait_for_content "$TMPF" '"ev":"start"' 5 \
-  && ok "wait_for_content findet start unter de_DE.UTF-8" \
-  || bad "wait_for_content scheitert unter de_DE.UTF-8"
-LC_ALL=de_DE.UTF-8 wait_for_lines "$TMPF" 2 5 \
-  && ok "wait_for_lines zählt 2 Zeilen unter de_DE.UTF-8" \
-  || bad "wait_for_lines scheitert unter de_DE.UTF-8"
+check_waits() { # <locale>
+  local loc="$1"
+  LC_ALL="$loc" wait_for_content "$TMPF" '"ev":"start"' 5 \
+    && ok "wait_for_content findet start unter $loc" \
+    || bad "wait_for_content scheitert unter $loc"
+  LC_ALL="$loc" wait_for_lines "$TMPF" 2 5 \
+    && ok "wait_for_lines zählt 2 Zeilen unter $loc" \
+    || bad "wait_for_lines scheitert unter $loc"
+}
+check_waits C
+check_waits de_DE.UTF-8
 rm -f -- "$TMPF"
 
 echo "  Matrix: $PASS pass, $FAIL fail, $SKIPPED skip"

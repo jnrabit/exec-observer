@@ -117,10 +117,12 @@ cleanup() {
     cleanup_temps
   fi
   # Restscan ohne pgrep (externes pgrep würde als Prozess auftauchen): /proc
-  # lesen ist reine Builtin-Arbeit, $(<...) ohne Fork.
+  # lesen ist reine Builtin-Arbeit, nacktes $(<...) ohne Fork (kein 2>/dev/null
+  # inside — das liefert still leer, s. lib-time.sh).
   local p comm
   for p in /proc/[0-9]*/comm; do
-    comm=$(<"$p" 2>/dev/null) || continue
+    [ -r "$p" ] || continue
+    comm=$(<"$p") || continue
     if [ "$comm" = "exec-observer" ]; then
       LEFTOVER=1
       echo "ACHTUNG: exec-observer-Prozess(e) noch aktiv: ${p#/proc/} (${p%/comm})" >&2
@@ -260,7 +262,8 @@ H_USRSLEEP="$(sha_of "$T_SYS")"       || die "sha256sum (System-sleep) fehlgesch
 # keinen fremden Prozess treffen.
 proc_starttime() { # proc_starttime <pid>
   local stat rest
-  stat=$(<"/proc/$1/stat" 2>/dev/null) || return 1
+  [ -r "/proc/$1/stat" ] || return 1
+  stat=$(<"/proc/$1/stat") || return 1
   rest="${stat##*)}"
   [ "$rest" != "$stat" ] || return 1
   set -- $rest
@@ -281,7 +284,8 @@ daemon_is_current() {
 }
 
 # Warten ohne neue Prozesse (B5): Fristen aus $EPOCHREALTIME, Muster per
-# [[ $(<...) ]], Zeilen per mapfile-Builtin – siehe tests/lib-time.sh.
+# nacktem [[ $(<...) ]] (ohne Zusatz-Umleitung!), Zeilen per mapfile-Builtin –
+# siehe tests/lib-time.sh.
 
 wait_start() { # wait_start <sink> [sekunden]
   local sink="$1"

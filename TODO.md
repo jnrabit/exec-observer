@@ -159,6 +159,12 @@ Statusbegriffe:
    `LC_ALL=C` in beiden Skripten; `tests/lib-time.sh` neu (now_s schneidet `.`
    und `,` ab); Abbruchpfad mit Zeit + Daemon-stderr + Daemon-Exit;
    rootloser `tests/locale-selftest.sh` (skip ohne de_DE.UTF-8).
+   Nachgetragen (Selbsttest-Erstlauf fing es): `$(<datei 2>/dev/null)`
+   liefert still leer (Bash-Optimierung greift mit Zusatz-Umleitung nicht) —
+   das war KEIN Locale-Fehler, sondern in allen Locales kaputt; ohne den
+   Selbsttest wäre `wait_start`/`proc_starttime`/LEFTOVER-Scan blind gewesen.
+   Fix: Existenz per Builtin prüfen, nacktes `$(<…)` lesen. Lehre: Test unter
+   beiden Locales (Parität), sonst zementiert man falsche Schuldzuweisungen.
 2. Überlauf-`.err`: `--stats` gibt `kernel_seen/geschrieben/lost` aus (B4
    umgesetzt, Format `kernel_seen=N geschrieben=N lost=N`). Fund:
    `eval_overflow` las `$CUR_SINK.err` (existiert nie), Daemon-stderr liegt in
