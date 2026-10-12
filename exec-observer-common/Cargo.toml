@@ -1,0 +1,7 @@
+[package]
+name = "exec-observer-common"
+version.workspace = true
+edition.workspace = true
+description = "Reine, host-testbare Ereignis→Zeile-Formatierung für den Exec-Beobachter"
+
+[dependencies]

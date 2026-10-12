@@ -1,0 +1,25 @@
+[package]
+name = "exec-observer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+aya = "0.14"
+bytemuck = "1"
+exec-observer-common = { path = "../exec-observer-common" }
+exec-observer-uapi = { path = "../exec-observer-uapi" }
+sha2 = "0.10"
+libc = "0.2"
+
+# Test-Feature für tests/cap-matrix.sh (Punkt 3): erlaubt --caps=... zur
+# Vorgabe der Zielmenge nach dem Laden. Im normalen Build (ohne Feature)
+# existiert die Option nicht; KEEP_WANTED bleibt unverändert.
+[features]
+cap-matrix = []
+
+[build-dependencies]
+aya-build = "0.2.0"
+
+[[bin]]
+name = "exec-observer"
+path = "src/main.rs"

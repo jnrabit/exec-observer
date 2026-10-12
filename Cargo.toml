@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = [
+    "exec-observer-common",
+    "exec-observer-uapi",
+    "exec-observer",
+    "exec-observer-ebpf",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"

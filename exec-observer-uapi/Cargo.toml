@@ -1,0 +1,8 @@
+[package]
+name = "exec-observer-uapi"
+version.workspace = true
+edition.workspace = true
+description = "Gemeinsames no_std-ABI (ExecEvent, Offset-Indizes) für eBPF-Sensor und Daemon"
+
+[dependencies]
+bytemuck = { version = "1", default-features = false, features = ["derive"] }

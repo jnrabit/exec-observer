@@ -1,0 +1,7 @@
+# Build-Artefakte (1,7 GB, jederzeit neu baubar – siehe tests/integration.sh)
+# cargo build -p exec-observer (normaler Nutzer, kein sudo)
+# gcc -O2 -Wall -Wextra -pthread tests/exec-cases.c -o tests/exec-cases.bin
+/target/
+
+# Laufzeit-Log aus abgebrochenen Daemonläufen (kein Quellartefakt)
+exec.log
