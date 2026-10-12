@@ -238,6 +238,16 @@ Statusbegriffe:
   Senken-Schreibfehler. Die ptrace-Korrelation des −1 bleibt unerklärt —
   Datensatz statt Code-Änderung: KEEP=1-Lauf auf s2 mit den drei Vergleichen
   (Strom vs. stats) plus `.err`-Grep.
+- Lauf 12.10. (sechster `over`-Lauf): ALLE VIER Mengen exakt (PASS, 1.000).
+  Das −1 ist damit intermittierend, aber mengenkorreliert (5× s2/s4, 0× s1/s3).
+  Neue Ableitung: `written` ist in allen vier Mengen IDENTISCH (759) — der Ring
+  steht bei CONT immer exakt voll (744) plus deterministische Nachzügler
+  (sleep + Harness ≈ 15); nur das Rauschen variiert. Führende Hypothese jetzt:
+  interleave-sensitiver Consumer-Verlust (aya-RingBuf-Kante), ausgelöst durch
+  langsame Noise-Hashes nur mit ptrace — deterministisch genug zum Kleben,
+  selten genug zum Aussetzen. KEIN Code-Change; entscheidend bleibt das
+  KEEP=1-Experiment (Strom vs. stats ×3, `.err`-Grep). Bei Bedarf danach:
+  `gedraint`-Diagnosezähler (Drain-Erfolge in --stats) zur Schichttrennung.
 - Dabei nebenbei belegt: dumpable/setuid brauchen `SYS_PTRACE` (DESIGN
   nachgetragen); Fall-a-Fehlermeldung nennt jetzt die `SEEN`-Map.
 - Wichtig: `ONLY_CASE=`/`MATRIX_BPF_TEST=` via `sudo` fallen weg (env_reset);
