@@ -953,6 +953,41 @@ fn verify_hash_state_after(
     }
 }
 
+/// Per-CPU-Kernelzählerstand mit Differenzbildung (DROPS/SEEN).
+/// Rein und host-testbar: summiert die Per-CPU-Werte je Lesung genau einmal.
+/// Die Zähler sind monoton (wrapping-sicher subtrahiert); der Startstand darf
+/// ungleich 0 sein (Map kann beim Daemonstart bereits zählen).
+#[derive(Debug, Default, Clone, Copy)]
+struct CounterDelta {
+    base: u64,
+    last: u64,
+}
+
+impl CounterDelta {
+    /// Startstand aus der ersten Lesung.
+    fn start(reading: &[u64]) -> Self {
+        let total: u64 = reading.iter().copied().sum();
+        Self {
+            base: total,
+            last: total,
+        }
+    }
+
+    /// Verarbeitet eine neue Lesung, liefert die Differenz seit der LETZTEN
+    /// Lesung und merkt den neuen Stand.
+    fn update(&mut self, reading: &[u64]) -> u64 {
+        let total: u64 = reading.iter().copied().sum();
+        let delta = total.wrapping_sub(self.last);
+        self.last = total;
+        delta
+    }
+
+    /// Gesamtdifferenz seit dem Start.
+    fn total(&self) -> u64 {
+        self.last.wrapping_sub(self.base)
+    }
+}
+
 /// Schreiber für die Senke: hält die Sequenznummer, den Puffer, den
 /// Hash-Cache und (falls `--stats` gegeben) die Laufzeitstatistik.
 struct Writer {
@@ -1605,26 +1640,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let drops_map = bpf.take_map("DROPS").ok_or("DROPS-Map fehlt")?;
     let drops: PerCpuArray<_, u64> = drops_map.try_into()?;
-    let mut last_drops: u64 = match drops.get(&0, 0) {
-        Ok(v) => v.iter().copied().sum(),
+    let mut drops_ctr = CounterDelta::start(&match drops.get(&0, 0) {
+        Ok(v) => v,
         Err(e) => {
             eprintln!("exec-observer: Fehler beim Lesen von DROPS: {e}");
             std::process::exit(1);
         }
-    };
-    let base_drops = last_drops;
+    });
 
     // SEEN zählt jeden `sched_process_exec`-Versuch (gesendet + verworfen).
     // Differenz seit Start = `kernel_seen`; Erhaltung: geschrieben + lost.
     let seen_map = bpf.take_map("SEEN").ok_or("SEEN-Map fehlt")?;
     let seen: PerCpuArray<_, u64> = seen_map.try_into()?;
-    let base_seen: u64 = match seen.get(&0, 0) {
-        Ok(v) => v.iter().copied().sum(),
+    let mut seen_ctr = CounterDelta::start(&match seen.get(&0, 0) {
+        Ok(v) => v,
         Err(e) => {
             eprintln!("exec-observer: Fehler beim Lesen von SEEN: {e}");
             std::process::exit(1);
         }
-    };
+    });
 
     let stop_mid = read_boot_id()?;
     let sink = open_sink_file(&sink_path).map_err(|e| format!("Senke öffnen: {e}"))?;
@@ -1729,9 +1763,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // Verlorene Ereignisse (Ringpuffer-Überlauf) melden.
-        let now_drops: u64 = match drops.get(&0, 0) {
-            Ok(v) => v.iter().copied().sum(),
+        // Verlorene Ereignisse (Ringpuffer-Überlauf) melden. Die Differenz
+        // seit der letzten Lesung liefert CounterDelta (eine Summe je Lesung).
+        let delta = drops_ctr.update(&match drops.get(&0, 0) {
+            Ok(v) => v,
             Err(e) => {
                 eprintln!("exec-observer: Fehler beim Lesen von DROPS: {e}");
                 writer.emit(&Event::Stop {
@@ -1744,51 +1779,60 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 return Err(e.into());
             }
-        };
-        if now_drops > last_drops {
-            writer.emit_lost(now_drops - last_drops)?;
-            last_drops = now_drops;
+        });
+        if delta > 0 {
+            writer.emit_lost(delta)?;
         }
     }
 
-    // ── 10. Shutdown-Drain (Entscheidung 7): Beim geordneten Stopp erst alle
-    // noch im Ring liegenden Ereignisse verarbeiten, dann stop. Sonst ginge
-    // die Erhaltung geschrieben + lost == kernel_seen durch einen
-    // Shutdown-Rest verloren.
-    while let Some(item) = events.next() {
-        let bytes: &[u8] = &item;
-        match parse_exec_event(bytes) {
-            Ok(ev) => {
-                if let Err(e) = writer.process(&ev) {
-                    eprintln!("exec-observer: Ereignis übersprungen ({e})");
+    // ── 10. Shutdown-Drain mit Konvergenz (Entscheidung 7 + B4): Beim
+    // geordneten Stopp erst alle noch im Ring liegenden Ereignisse
+    // verarbeiten, dann stop. Danach Zähler lesen und nachleeren, bis eine
+    // Runde nichts mehr findet: Versuche, die GENAU während des Auslesens
+    // fertig wurden, wären sonst in SEEN, aber nicht in geschrieben enthalten
+    // (praktisch 0, dokumentiert in SCHEMA.md §9). Deckel: 9 Runden, damit
+    // Dauerausführende den Stopp nicht ewig verzögern.
+    for _ in 0..9 {
+        let mut n = 0u64;
+        while let Some(item) = events.next() {
+            n += 1;
+            let bytes: &[u8] = &item;
+            match parse_exec_event(bytes) {
+                Ok(ev) => {
+                    if let Err(e) = writer.process(&ev) {
+                        eprintln!("exec-observer: Ereignis übersprungen ({e})");
+                    }
                 }
+                Err(err) => writer.note_parse_error(err),
             }
-            Err(err) => writer.note_parse_error(err),
+        }
+        let delta = drops_ctr.update(&match drops.get(&0, 0) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("exec-observer: Fehler beim Lesen von DROPS: {e}");
+                std::process::exit(1);
+            }
+        });
+        if delta > 0 {
+            writer.emit_lost(delta)?;
+        }
+        seen_ctr.update(&match seen.get(&0, 0) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("exec-observer: Fehler beim Lesen von SEEN: {e}");
+                std::process::exit(1);
+            }
+        });
+        if n == 0 {
+            break;
         }
     }
 
-    // Endstände der Kernel-Zähler nach dem Drain (Differenzen seit Start).
-    let end_drops: u64 = match drops.get(&0, 0) {
-        Ok(v) => v.iter().copied().sum(),
-        Err(e) => {
-            eprintln!("exec-observer: Fehler beim Lesen von DROPS: {e}");
-            std::process::exit(1);
-        }
-    };
-    let end_seen: u64 = match seen.get(&0, 0) {
-        Ok(v) => v.iter().copied().sum(),
-        Err(e) => {
-            eprintln!("exec-observer: Fehler beim Lesen von SEEN: {e}");
-            std::process::exit(1);
-        }
-    };
-    let kernel_seen = end_seen.wrapping_sub(base_seen);
+    // Endstände als Differenzen seit Start (B4-Erhaltung).
+    let kernel_seen = seen_ctr.total();
     // `lost` sind nur die Kernel-seitigen Verluste (DROPS-Differenz);
     // Strukturfehler erscheinen separat als Sammel-`lost` im Strom.
-    let lost_total = end_drops.wrapping_sub(base_drops);
-    if end_drops > last_drops {
-        writer.emit_lost(end_drops - last_drops)?;
-    }
+    let lost_total = drops_ctr.total();
 
     // ── 11. stop-Ereignis ─────────────────────────────────────────────
     // Strukturell ungültige Ereignisse erscheinen als ein Sammel-`lost`, bevor
@@ -2542,6 +2586,48 @@ mod tests {
         // 0xc800080004 = die Maskenform aus dem Root-Lauf (Bits 2, 19, 35, 38, 39)
         // – low trägt Bits 2 und 19, high die Bits 3, 6, 7 (→ 35, 38, 39).
         assert_eq!(compose_cap_words(0x0008_0004, 0xc8), 0xc800_0800_04);
+    }
+
+    // ── CounterDelta (Punkt 2): Per-CPU-Differenzbildung ──────────────
+
+    #[test]
+    fn counter_delta_starts_at_zero_with_zero_reading() {
+        let mut c = CounterDelta::start(&[0, 0, 0]);
+        assert_eq!(c.total(), 0);
+        assert_eq!(c.update(&[0, 0, 0]), 0);
+        assert_eq!(c.total(), 0);
+    }
+
+    #[test]
+    fn counter_delta_sums_per_cpu_values_once_per_reading() {
+        // Drei CPUs: 1+2+3 = 6, keine doppelte Summierung.
+        let mut c = CounterDelta::start(&[1, 2, 3]);
+        assert_eq!(c.total(), 0);
+        // Zähler ändern sich zwischen Lesungen (eine CPU +3).
+        assert_eq!(c.update(&[1, 2, 6]), 3);
+        assert_eq!(c.total(), 3);
+        // Nur Umverteilung zwischen CPUs (Summe gleich) → Delta 0.
+        assert_eq!(c.update(&[4, 2, 3]), 0);
+        assert_eq!(c.total(), 3);
+    }
+
+    #[test]
+    fn counter_delta_accepts_nonzero_start() {
+        // Map zählte beim Daemonstart bereits (Anfangswert != 0): nur
+        // Differenzen danach zählen.
+        let mut c = CounterDelta::start(&[10, 20]);
+        assert_eq!(c.total(), 0);
+        assert_eq!(c.update(&[10, 20]), 0);
+        assert_eq!(c.update(&[11, 22]), 3);
+        assert_eq!(c.total(), 3);
+    }
+
+    #[test]
+    fn counter_delta_wraps_safely() {
+        let mut c = CounterDelta::start(&[u64::MAX]);
+        // Zählerüberlauf: 2 − MAX wrapping = 3, keine Panik, kein Sprung.
+        assert_eq!(c.update(&[2]), 3);
+        assert_eq!(c.total(), 3);
     }
 
     // ── ProcStats (Teilauftrag: --stats) ────────────────────────────────

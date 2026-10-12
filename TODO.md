@@ -155,13 +155,10 @@ Statusbegriffe:
    konsolidieren: `offen`.
 
 ## Läufe-Auswertung (Punkte 1–4) – umgesetzt, Läufe durch Nutzer offen
-
-1. Locale: Hypothese bestätigt (Codebefund: `${EPOCHREALTIME%%.*}` in
-   `wait_for_content`, alte Zeile 274). `LC_ALL=C` in beiden Skripten;
-   `tests/lib-time.sh` neu (now_s schneidet `.` und `,` ab); Abbruchpfad mit
-   verstrichener Zeit + Daemon-stderr (20 Zeilen) + Daemon-Exit; neuer
-   rootloser `tests/locale-selftest.sh` (de_DE.UTF-8 vs C, skip ohne Locale).
-   Statisch geprüft, nicht ausgeführt.
+1. Locale: Hypothese bestätigt (`${EPOCHREALTIME%%.*}` scheitert am Komma).
+   `LC_ALL=C` in beiden Skripten; `tests/lib-time.sh` neu (now_s schneidet `.`
+   und `,` ab); Abbruchpfad mit Zeit + Daemon-stderr + Daemon-Exit;
+   rootloser `tests/locale-selftest.sh` (skip ohne de_DE.UTF-8).
 2. Überlauf-`.err`: `--stats` gibt `kernel_seen/geschrieben/lost` aus (B4
    umgesetzt, Format `kernel_seen=N geschrieben=N lost=N`). Fund:
    `eval_overflow` las `$CUR_SINK.err` (existiert nie), Daemon-stderr liegt in
@@ -197,3 +194,28 @@ Statusbegriffe:
   Python-Auswertung per synthetischen Senken geprüft (K8/K9/K13/K23–K27 PASS).
 - Offen: kompletter Root-Lauf (`sudo tests/integration.sh`,
   `sudo tests/cap-matrix.sh`).
+
+## Überlauftest-Doppelzählung (lost == 2×) – Ursache behoben, Lauf offen
+
+- Befund (8 Messungen, alle Mengen): `lost` ≈ 2 × (`kernel_seen` − geschrieben).
+- Ursache belegt: Sensor zählte Reservierungs-Drops doppelt (innen in
+  `try_sched_process_exec` UND im Wrapper bei `Err`). Andere Fehlerpfade
+  (discard) einfach; Daemon-Differenz und Per-CPU-Summen je einmal
+  (Hypothesen widerlegt, Codebeleg im Bericht).
+- Fix: inneres `count_drop()` entfernt (Wrapper einzige Zählstelle).
+- Härtung: `CounterDelta` (eine Summe je Lesung, 4 Host-Tests), Shutdown-Drain
+  mit Konvergenz (9 Runden Deckel), Erhaltung exakt ohne Toleranz.
+- Tests melden `lost/(seen−geschrieben)` (gesund 1.000).
+- SEEN: keine Doppelzählung (ein `count_seen()` im Wrapper); Rauschen
+  (System-Execs) fließt konsistent in alle drei Zähler ein.
+- Lauf 12.10. (Matrix, `--features cap-matrix` baut sauber):
+  s1/s3 `over` PASS mit Verhältnis 1.000 (Fix bestätigt);
+  s2/s4 `over` FAIL mit exakt −1 (1381 vs 1382, Verhältnis 0.998).
+  Resthypothesen: In-Flight-Race beim Endauslesen, Senken-Schreibfehler
+  („übersprungen“), oder systematisch — Unterscheidungsexperimente offen
+  (Wiederholung: wandert das −1 oder klebt es an ptrace-Mengen? KEEP=1 +
+  `.err` auf „übersprungen“ prüfen; Strom-Zeilen vs. `geschrieben`).
+- Dabei nebenbei belegt: dumpable/setuid brauchen `SYS_PTRACE` (DESIGN
+  nachgetragen); Fall-a-Fehlermeldung nennt jetzt die `SEEN`-Map.
+- Wichtig: `ONLY_CASE=`/`MATRIX_BPF_TEST=` via `sudo` fallen weg (env_reset);
+  Aufruf mit `sudo env ...`.

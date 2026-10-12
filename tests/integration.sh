@@ -759,7 +759,11 @@ m = re.search(r"kernel_seen=(\d+) geschrieben=(\d+) lost=(\d+)", FSTATS_TEXT)
 if m:
     ks, wr, lo = map(int, m.groups())
     ok13 = (wr + lo == ks and lo >= 1)
-    msg13 = (f"Erhaltung: geschrieben({wr})+lost({lo})==kernel_seen({ks}), lost>=1 "
+    # Punkt 4: Verhältnis lost/(kernel_seen − geschrieben); gesund = 1.0
+    # (Doppelzählung zeigte 2.0). Nenner 0 → kein Verlust messbar.
+    ratio13 = ("%.3f" % (lo / (ks - wr))) if ks > wr else "n/a (kein Verlust)"
+    msg13 = (f"Erhaltung: geschrieben({wr})+lost({lo})==kernel_seen({ks}), lost>=1; "
+             f"Verhältnis lost/(seen-geschrieben)={ratio13} "
              f"(erfolgreiche Starts={OVERFLOW_EXECS} nur Info)")
 else:
     ok13 = False

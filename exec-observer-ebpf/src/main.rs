@@ -398,7 +398,9 @@ fn try_sched_process_exec(ctx: TracePointContext) -> Result<(), i32> {
     let base = ctx.as_ptr() as u64;
 
     let Some(mut entry) = EVENTS.reserve::<ExecEvent>(0) else {
-        count_drop();
+        // KEIN count_drop() hier: Der Wrapper `sched_process_exec` zählt jeden
+        // Fehlerpfad genau einmal. Ein zusätzliches Zählen hier verdoppelte
+        // Reservierungs-Drops (Befund: lost == 2 × (kernel_seen − geschrieben)).
         return Err(-1);
     };
     {

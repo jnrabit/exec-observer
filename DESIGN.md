@@ -27,19 +27,16 @@ Rechten als vorgesehen.
 
 ## 2. Begründung je Capability
 
-### `CAP_BPF` — **belegt zum Laden; Laufzeit offen (Experiment läuft)**
+### `CAP_BPF` — **belegt zum Laden; zur Laufzeit widerlegt (nicht nötig)**
 
 | Beleg | Quelle |
 |---|---|
 | Ohne `CAP_BPF` startet der Daemon **nicht**: `Ebpf::load` scheitert schon beim Anlegen der Maps (`Error: "eBPF laden: map error: failed to create map `ARGS`"`), Exit ≠ 0, keine `start`-Zeile. | Root-Lauf, `cap-matrix.sh` Fall a |
-| **Laufzeit** nötig (Annahme, zu prüfen): nach der Reduktion ist `BPF` eine der drei behaltenen Caps, und die Läufe mit nur `{bpf, perfmon, sys_ptrace, dac_read_search}` arbeiteten weiter. | Root-Lauf, Fälle b/e |
+| **Laufzeit NICHT nötig (Experiment Punkt 3):** Zielmenge `--caps=ptrace,dac` bei Startmenge s1 (`bpf+perfmon`) ⇒ Schnittmenge **leer** — der Daemon lief mit **null Capabilities** voll funktionsfähig: start-Zeile, komplette Verarbeitung, `--stats` mit exakter Erhaltung (759+622=1381). Das Lesen bestehender `DROPS`/`SEEN`-Maps über `bpf()` braucht auf diesem System **kein** `CAP_BPF`. | Root-Lauf, `over_nobpf` (Feature-Build) |
 
-Offen ist, ob das Lesen von `DROPS`/`SEEN` über `bpf()` nach dem Laden ohne
-`CAP_BPF` gelingt (`kernel.unprivileged_bpf_disabled = 2` auf dem
-Zielsystem). Experiment (Punkt 3): Daemon mit Test-Feature `cap-matrix`
-bauen, Zielmenge `--caps=ptrace,dac` vorgeben, Überlauftest fahren.
-Erwartung (Hypothese): Die Map-Lesezugriffe schlagen ohne `CAP_BPF` fehl.
-**Bis zum Ergebnis bleibt die Menge unverändert** (`CAP_BPF` wird behalten).
+Konsequenz (noch nicht umgesetzt, Entscheidung ausstehend): `CAP_BPF` könnte
+aus der Laufzeitmenge fallen (`KEEP_WANTED` → `ptrace+dac`). Das ändert Masken,
+Matrix-Erwartungen und Host-Tests — erst nach expliziter Freigabe.
 
 ### `CAP_SYS_PTRACE` — **belegt**
 
@@ -48,7 +45,7 @@ Erwartung (Hypothese): Die Map-Lesezugriffe schlagen ohne `CAP_BPF` fehl.
 | Ohne `CAP_SYS_PTRACE` ist `/proc/<pid>/exe` eines Prozesses **anderer uid** nicht lesbar → `hash_state: "unreadable"`, `sha256: null`. | Root-Lauf, Fall e (Menge `bpf, perfmon, dac_read_search`) |
 | Gegenprobe bestanden: **mit** `SYS_PTRACE` (s2/s4) → lesbar/`ok`, **ohne** (s1/s3) → `unreadable`. | Root-Lauf, `cap-matrix.sh` Teil 2, Fälle `a1000`/`aroot` |
 | Grund: `ptrace_may_access` verlangt bei uid-Abweichung `CAP_SYS_PTRACE`. | Kernel-Regel |
-| Die dumpable-Regel greift **unabhängig von der uid**: setuid-Prozesse, `PR_SET_DUMPABLE=0`, und vom Kernel bei nur-ausführbaren Dateien (Modus 0711) gesetztes `dumpable=0`. | Verhaltensmatrix-Fälle c und b |
+| Die dumpable-Regel greift **unabhängig von der uid**: setuid-Prozesse, `PR_SET_DUMPABLE=0`, und vom Kernel bei nur-ausführbaren Dateien (Modus 0711) gesetztes `dumpable=0`. | Verhaltensmatrix-Fälle c und b, **belegt** (s2/s4 ok, s1/s3 unreadable) |
 
 ### Beobachtet, Ursache ungeklärt: root-Prozess ohne `SYS_PTRACE` unlesbar
 
@@ -170,7 +167,8 @@ Start (werden nach dem Laden abgegeben, soweit entbehrlich):
   CAP_BPF             Anlegen der Maps
   CAP_PERFMON         Laden der Programme        (belegt: ohne ihn EPERM)
 Laufzeit (behält der Daemon selbst):
-  CAP_BPF             Lesen von DROPS/SEEN (Annahme, Experiment läuft – s. §2)
+  CAP_BPF             Lesen von DROPS/SEEN (widerlegt unnötig, aber bis zur
+                      Mengen-Entscheidung behalten – s. §2)
   CAP_SYS_PTRACE      /proc/<pid>/exe fremder UID und gleicher UID (root→root), dumpable-Regel
   CAP_DAC_READ_SEARCH Inhalt nicht-weltlesbarer Binärdateien (belegt, s. o.)
 Bounding-Set         = genau die Startmenge, nicht mehr
@@ -189,8 +187,8 @@ und meldet auf stderr, was er tat:
 | `SYS_PTRACE` → Hash root→root lesbar (aroot) | **belegt** (s2/s4 ok, s1/s3 unreadable) | Teil 2, s2/s4, Fall aroot |
 | root→root ohne `SYS_PTRACE` unlesbar: Ursache ungeklärt | **beobachtet** (Hypothese: ptrace-Prüfung verlangt Besitz der Zielrechte) | Fall aroot, s1/s3 |
 | `DAC_READ_SEARCH` → Hash 0711-Datei lesbar | **belegt** (s2 unreadable, s4 ok) | Teil 2, s2/s4, Fall b |
-| dumpable/setuid brauchen `SYS_PTRACE` | offen | Teil 2, Fall c |
-| Überlauf/DROPS/SEEN brauchen `CAP_BPF` zur Laufzeit | offen (Experiment: `--caps=ptrace,dac` + Überlauftest; Hypothese: Map-Lesen braucht `CAP_BPF`) | Teil 2, Fall d |
+| dumpable/setuid brauchen `SYS_PTRACE` | **belegt** (s2/s4 ok, s1/s3 unreadable) | Teil 2, Fall c |
+| Überlauf/DROPS/SEEN brauchen `CAP_BPF` zur Laufzeit | **widerlegt** (`over_nobpf`: null Caps, volle Funktion, Erhaltung exakt) | Teil 2, Fall d |
 | `PERFMON` **mit** `BPF` reicht zum Laden | **belegt** (Fälle b/c/e laufen) | Teil 1 b/c/e |
 | `PERFMON` **ohne** `BPF` reicht zum Laden nicht (Maps) | **belegt** (Fall a: Map-Fehler) | Teil 1 a |
 | `BPF` **ohne** `PERFMON` reicht zum Laden nicht (Programme) | **belegt** (Fall f: LoadError EPERM) | Teil 1 f |

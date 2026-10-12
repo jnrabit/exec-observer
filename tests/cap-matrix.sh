@@ -472,7 +472,8 @@ m = re.search(r"kernel_seen=(\d+) geschrieben=(\d+) lost=(\d+)", err)
 if m:
     ks, wr, lo = map(int, m.groups())
     ok = bool(wr + lo == ks and lo >= 1)
-    detail = {"kernel_seen": ks, "written": wr, "lost": lo}
+    ratio = ("%.3f" % (lo / (ks - wr))) if ks > wr else "n/a"
+    detail = {"kernel_seen": ks, "written": wr, "lost": lo, "ratio": ratio}
 else:
     ok, detail = False, {"error": "keine kernel_seen-Zeile in --stats"}
 print(json.dumps({"prefix": prefix, "ok": ok, "iterations_ok": iters,
@@ -872,6 +873,7 @@ for key, label, caps in SETS:
             emit("ROW", "INFO",
                  "%s|%s|Messwerte (keine Bewertung)|%s, Exit=%s, caps=%s: %s"
                  % (key + " " + label, case, started_txt, exc, caps, meas))
+            continue  # keine PASS/FAIL-Wertung (fiele sonst mit alten Werten ins Emit unten)
         elif case == "over":
             o = overflow_json(key)
             if o is None:
@@ -880,8 +882,9 @@ for key, label, caps in SETS:
             elif "kernel_seen" in o:
                 expected = "geschrieben(%d)+lost(%d)==kernel_seen(%d), lost>0" % (
                     o["written"], o["lost"], o["kernel_seen"])
-                meas = "%d Zeilen, lost=%d (Strom-lost=%d)" % (
-                    o["exec_lines"], o["lost"], o["stream_lost"])
+                meas = "%d Zeilen, lost=%d (Strom-lost=%d), Verhältnis=%s" % (
+                    o["exec_lines"], o["lost"], o["stream_lost"],
+                    o.get("ratio", "?"))
                 ok = bool(o.get("ok"))
             else:
                 expected, meas, ok = ("geschrieben+lost=kernel_seen, lost>0",

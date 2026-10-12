@@ -135,6 +135,24 @@ bestimmt und steht unabhängig vom Prozesszustand.
 ```
 - `count` – Anzahl verlorener Ereignisse seit der letzten Prüfung (Ringpuffer-Überlauf).
 
+#### Erhaltung `geschrieben + lost == kernel_seen` (keine Toleranz nötig)
+
+Jeder `sched_process_exec`-Versuch endet entweder als gesendetes Ereignis
+(`geschrieben`, genau eine exec-Zeile) oder als gezählter Verlust (`lost`,
+DROPS-Differenz) – der Sensor zählt jeden Fehlerpfad genau einmal, der Daemon
+summiert jede Per-CPU-Lesung genau einmal. `--stats` meldet alle drei
+Stände (`kernel_seen`, `geschrieben`, `lost`).
+
+Keine Toleranz nötig, weil: (a) der Shutdown-Drain mit Konvergenz
+nachleert, bis eine Runde nichts mehr findet – Versuche, die genau während
+des Auslesens fertig werden, landen noch in `geschrieben`; (b) Strukturfehler
+(Ringmüll, nicht aus dem Sensor) zählen nicht in `kernel_seen` und erscheinen
+separat. Verbleibender Rest: ein Versuch, der in den Nanosekunden zwischen
+letzter Leerprüfung und Zählerlesung fertig wird (praktisch 0), sowie
+Senken-Schreibfehler (Annahme: Senke schreibbar). Das Verhältnis
+`lost/(kernel_seen − geschrieben)` muss 1.000 sein; 2.000 war die
+DROPS-Doppelzählung (behoben, s. §9).
+
 ### `stop`
 ```json
 {"v":2,"seq":…,"ts":…,"wall":…,"ev":"stop","mid":"…"}
@@ -286,3 +304,8 @@ Version.
 - `--stats`: Zähler `ident_missing` neu (Ereignisse ohne Sensor-Identität).
 - Kettenhinweis neu: eine PID trägt mehrere Exec-Zeilen; eindeutig ist die
   Zeile (`seq`), nicht die PID.
+- DROPS-Doppelzählung behoben: Reservierungsfehler wurden im Sensor zweimal
+  gezählt (innen + Wrapper); jetzt genau einmal. `lost` ist wieder exakt die
+  Verlustzahl; Verhältnis `lost/(seen−geschrieben)` muss 1.000 sein.
+- Daemon-Differenzbildung (`CounterDelta`, eine Summe je Lesung, host-getestet)
+  und Shutdown-Drain mit Konvergenz (keine Toleranz in der Erhaltung nötig).
