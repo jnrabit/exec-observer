@@ -215,6 +215,15 @@ Statusbegriffe:
   („übersprungen“), oder systematisch — Unterscheidungsexperimente offen
   (Wiederholung: wandert das −1 oder klebt es an ptrace-Mengen? KEEP=1 +
   `.err` auf „übersprungen“ prüfen; Strom-Zeilen vs. `geschrieben`).
+- Lauf 12.10. (dritter `over`-Lauf, `ONLY_CASE` griff diesmal):
+  s1/s3 exakt 0, s2/s4 exakt −1 — zum dritten Mal identisch pro Menge.
+  Stochastischer Race damit praktisch ausgeschlossen (P < 0,03 % für jedes
+  feste p). Verbleibende Verdächtige: stiller Consumer-Verlust
+  (aya-RingBuf-Kante unter langsam/schnell-Interleave durch Noise-Hashing
+  nur mit ptrace) oder Senken-Schreibfehler (`.err`-Spur „übersprungen“).
+  KEINE Code-Änderung bis zur Klärung; Entscheidungs-Experiment: KEEP=1-Lauf
+  auf s2, dann Strom-Zeilen vs. `geschrieben`, Strom-lost vs. `lost`,
+  `.err` auf Fehler prüfen.
 - Dabei nebenbei belegt: dumpable/setuid brauchen `SYS_PTRACE` (DESIGN
   nachgetragen); Fall-a-Fehlermeldung nennt jetzt die `SEEN`-Map.
 - Wichtig: `ONLY_CASE=`/`MATRIX_BPF_TEST=` via `sudo` fallen weg (env_reset);
