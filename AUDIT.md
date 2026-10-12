@@ -364,7 +364,7 @@ fehlgeschlagenes Exec).
 | 11 | `argc`-Randfälle: `n=0`; `Limit-1`/`Limit`/`Limit+1`; `n=100000` | K15, K16, K17 | Integration | geschrieben, Root-Lauf nicht protokolliert; Helfer verifiziert |
 | 12a | `execveat` auf memfd → `fileless` (ohne `deleted`), `hash_state: ok`, `sha256` = Nutzlast-Hash | K12 | Integration | Private Nutzlast (`PAY_C`, lebt 3 s), sonst nicht beobachtbar (§6) |
 | 12b | Gelöschte Datei → `deleted`, nicht `fileless`, Hash = Kopie-Hash | K18 | Integration | Private Kopie via `EXEC_CASES_TMPDIR` (lebt); Helfer verifiziert |
-| 13 | Ringpuffer-Überlauf → Erhaltung `geschrieben + lost == kernel_seen` (B4), `lost ≥ 1` | K13 | Integration + cap-matrix Fall d | cap-matrix: s1/s3 PASS (Verhältnis 1.000); s2/s4 exakt −1 (sechs Läufe) — offen, KEEP=1-Experiment ausstehend; Integration: geschrieben, Laufstand nicht protokolliert |
+| 13 | Ringpuffer-Überlauf → Erhaltung `geschrieben + lost == kernel_seen` (B4), `lost ≥ 1` | K13 | Integration + cap-matrix Fall d | cap-matrix: alle Mengen PASS (Verhältnis 1.000); Vorgeschichte: DROPS-Doppelzählung (behoben) und consume-then-break bei TERM (behoben, Seziere-Fund) |
 | 14 | `kill -9`: letzte Zeile valides JSON, kein `stop`; zusätzlich K14b: der getroffene Prozess ist wirklich fort | K14, K14b | Integration | geschrieben; Nutzer-Befund A stammt aus einer Phase-D-Senke (kill -9-Fall lief); Matrix nicht protokolliert; K14b prüft `kill -0` auf die Daemon-PID (kein Waisenprozess mehr) |
 
 ### 7.3 Weitere Prüfungen (nicht Auftrags-Kriterium) – und die offenen Zeilen
@@ -386,7 +386,6 @@ fehlgeschlagenes Exec).
 
 Offene Zeilen bewusst benannt: **cap-matrix Fall c/d2** (deaktiviert),
 **PID-Wiederverwendung** (K10 bleibt `SKIP`, nur `resolve_argc` host-geprüft),
-**Überlauf s2/s4** (exakt −1, KEEP=1-Experiment ausstehend),
 **Integration-Matrix** (lief beim Nutzer, aber nicht protokolliert).
 
 Host-Testzahlen (laufend): `exec-observer-uapi` 8, `exec-observer-common` 28,

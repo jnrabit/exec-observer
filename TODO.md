@@ -211,6 +211,7 @@ zurückgestuft — sie erklärt alles und beweist nichts.
 | 4 (ONLY_CASE) | 0 | −1 | 0 | −1 |
 | 5 (ONLY_CASE) | 0 | −1 | 0 | −1 |
 | 6 (ONLY_CASE) | 0 | 0 | 0 | 0 |
+| 7 (ONLY_CASE, Fix-Binary) | 0 | 0 | 0 | 0 |
 
 (* Lauf 3, s4: Anzeige-Zahlendreher; `ok`+Verhältnis stimmen für −1.)
 0 = Gleichung exakt (Verhältnis 1.000); −1 = genau eins fehlt.
@@ -237,21 +238,26 @@ Diskriminierend ist ausschließlich das KEEP=1-Experiment (Strom-Zeilen vs.
 `geschrieben`, Strom-`lost` vs. `lost`, `.err`-Grep) — alles andere ist
 derzeit Meinung, inklusive meiner eigenen Interleave-Überlegung.
 
-### Stärkste Hypothese (falsifizierbar durch Rerun, kein Code-Raten mehr)
+### Entschieden (Lauf 7, Fix-Binary belegt)
 
-Beim Gegenlesen gefunden und sofort behoben (Hauptschleife, ererbter
-Flüchtigkeitsfehler): `while let Some(item) = next()` + Abbruch *nach* dem
-Holen verwarf ein bereits geholtes, unverarbeitetes Ereignis still (in SEEN,
-nie geschrieben, nie in DROPS). Kausalkette zum −1: Vor `stop_daemon_now`s
-TERM spawnt `run_case` deterministisch ~4 Harness-Prozesse (tr/cut/head);
-mit ptrace drainen diese langsam (Hash-Versuche an lebenden Zielen), ohne
-schnell. Trifft TERM mitten im Drain mit ≥2 Items Rest, geht exakt EINS
-verloren — der Rest wird vom Konvergenz-Drain gerettet. Das erklärt Menge
-(ptrace-Korrelation über Drain-Geschwindigkeit), Ausmaß (genau 1) und
-Lautlosigkeit — und Lauf 6 als Scheduling-Jitter. Fix: Stopp *vor* dem Holen
-prüfen (`while !STOP` + `let-else`); danach kann ein −1 nicht mehr von hier
-kommen. Falsifikation: `ONLY_CASE=over`-Rerun — s2/s4 grün ⇒ bestätigt;
-−1 bleibt ⇒ Hypothese tot, zurück zum KEEP=1-Experiment.
+- Beweiskette zum Binary: Fix in main.rs seit 17:38:32 im gemeinsamen Baum,
+  Binary-Relink 17:47:50 danach; das fehlende `Compiling exec-observer` im
+  geposteten Log gehört zu einem redundanten Zweitlauf (Daemon-Fingerprint
+  frisch, nur eBPF-Nested-Build lief neu).
+- s2/s4 grün NACH dem Fix (vorher 5× −1) ⇒ consume-then-break war die Ursache.
+  Fall geschlossen: KEEP=1-Experiment entfällt, keine Toleranz, Interleave-
+  und alle anderen Hypothesen gegenstandslos.
+
+Bestätigter Mechanismus (ererbter Flüchtigkeitsfehler in der Hauptschleife):
+`while let Some(item) = next()` + Abbruch *nach* dem Holen verwarf ein
+bereits geholtes, unverarbeitetes Ereignis still (in SEEN, nie geschrieben,
+nie in DROPS). Kausalkette: Vor `stop_daemon_now`s TERM spawnt `run_case`
+deterministisch Harness-Prozesse (tr/cut/head); mit ptrace drainen diese
+langsam (Hash-Versuche an lebenden Zielen), ohne schnell. Traf TERM mitten
+im Drain mit ≥2 Items Rest, ging exakt EINS verloren — den Rest rettete der
+Konvergenz-Drain. Das erklärte Menge (ptrace-Korrelation), Ausmaß (genau 1)
+und Lautlosigkeit. Fix: Stopp *vor* dem Holen prüfen (`while !STOP` +
+`let-else`).
 
 ### Nachgereicht: aya-RingBuf-Audit (vorbestehende Schicht, kein eigener Code)
 
