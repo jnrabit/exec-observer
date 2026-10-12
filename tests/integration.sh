@@ -235,6 +235,10 @@ cp /bin/sleep "$T_TMP" || die "Kopie tmpfs-Ziel fehlgeschlagen"
 chmod 755 "$T_TMP" || die "chmod tmpfs-Ziel fehlgeschlagen"
 chown -R "$USER_UID:$USER_GID" "$BTRFSROOT" || die "chown (btrfs) fehlgeschlagen"
 chown "$USER_UID:$USER_GID" "$T_TMP" || die "chown tmpfs-Ziel fehlgeschlagen"
+# Fix K27: TMPROOT ist mktemp-Verzeichnis (root, 0700). Uid 1000 braucht nur
+# Durchgangsrecht (x) zum Erreichen von T_TMP, kein Lese-/Schreibrecht. Ohne
+# das scheiterte der Exec des Ziels still (Zeilenzahl 2 statt 3 pro PID).
+chmod 711 "$TMPROOT" || die "chmod TMPROOT fehlgeschlagen"
 # Erwartete Hashes VOR dem ersten Daemonstart bestimmen (sha256sum selbst ist
 # ein Prozess; danach darf kein Setup-Prozess mehr laufen, solange ein Daemon
 # lauscht). Feldsplit per Parameter-Expansion, ohne cut/awk (B5).
@@ -537,15 +541,26 @@ GSTATS="$SINKG.err"
 # Das beweist zugleich die Timing-Annahme (Punkt 5): Der Sensor las die
 # Helfer-Identität zum Helfer-Ereignis (sonst wäre die Helfer-Zeile ok mit
 # fremdem Hash – genau Befund A) und die Ziel-Identität zum Ziel-Ereignis.
-# Das Ziel (sleep 3) lebt bei der Verarbeitung noch.
+# Das Ziel (8 s) lebt bei der Verarbeitung noch (s. Fix unten).
+# Fix (Testfehler): Vorher lief die Kette SYNCHRON, das Ziel war beim
+# Verarbeiten längst tot → `gone` war korrekt, der Test falsch. Jetzt: Kette im
+# Hintergrund mit 8 s Lebensdauer; Daemon bleibt angehalten, bis das Ziel-Image
+# läuft (Polling per Builtin, Abbruch nach 5 s); dann CONT. Verarbeitung dauert
+# Millisekunden, das Ziel lebt noch 8 s.
 new_sink || die "mktemp -d (Senke H) fehlgeschlagen"
 SINKH="$SINK_PATH"
 start_daemon "$SINKH"
 kill -STOP "$DAEMON_PID"
-run_user "$H_P" main_exec "$T_H" 3 >/dev/null 2>&1 || true
+run_user "$H_P" main_exec "$T_H" 8 >/dev/null 2>&1 & HPID=$!
+now_s; hend=$(( NOW_S + 5 ))
+while :; do
+  now_s; [ "$NOW_S" -ge "$hend" ] && break
+  [ -r "/proc/$HPID/comm" ] && [ "$(<"/proc/$HPID/comm")" = "target-chain.bi" ] && break
+done
 kill -CONT "$DAEMON_PID"
 wait_for_quiescence "$SINKH" 4 15 || true   # start + 3 Kettenstufen
 stop_daemon "$SINKH"
+wait "$HPID" 2>/dev/null || true            # Kette ausklingen lassen (≤ 8 s)
 
 # ── Phase I: Dateisystem-Matrix (TESTS a/b) ─────────────────────────────────
 # (a) Ziel auf btrfs (privater Ordner unter dem Projektverzeichnis) UND ein
@@ -728,13 +743,15 @@ emit(8, "PASS" if (len(tb) == 2 and all(isinstance(e["sha256"], str)
       f"Zielkopie: genau 2 Zeilen, sha256==Kopie-Hash, ok, uid={UUID}")
 ctx(8, B, lambda e: e["ev"] == "exec" and e["path"] == TB)
 
-# K9: cached beim 2. Start derselben privaten Kopie (B2): 1. Zeile ohne
-#     cached (nichts wärmte vor), 2. mit cached, identischer sha256.
+# K9: Cache-Treffer mit identischem sha256 (B2). Korrigiert: Die erste Zeile
+#     darf schon `cached` sein, weil die Stufen derselben Kette (setpriv,
+#     Helfer) denselben Prozess beim Verarbeiten sehen: /proc/<pid>/exe zeigt
+#     dann das Ziel und der Hash wird in den Cache gelegt. Der Cache ist
+#     dateiidentitätsgeschlüsselt, ein Treffer ist also korrekt.
 emit(9, "PASS" if len(tb) == 2
-                    and "cached" not in flags(tb[0])
                     and "cached" in flags(tb[1])
                     and tb[0]["sha256"] == tb[1]["sha256"] else "FAIL",
-      "1. Start ohne cached, 2. mit cached, identischer sha256")
+      "Cache-Treffer (2. Start) mit identischem sha256 (1. Start darf cached sein, s. Kommentar)")
 
 # K10: reused – nur bei echter PID-Wiederverwendung reproduzierbar
 emit(10, "SKIP", "reused (PID-Reuse) – nur manuell reproduzierbar, siehe BERICHT")
@@ -744,10 +761,11 @@ trunc = [e for e in execs(C) if "path_trunc" in flags(e)]
 emit(11, "PASS" if trunc and len(trunc[0]["path"]) <= 256 else "FAIL",
       "tiefer Pfad → path_trunc, path ≤ 256 B")
 
-# K12: memfd/fileless. Die Nutzlast ist die private Kopie PAY_C (Inhalt wie
-#      /bin/sleep) und läuft 3 s – nur so steht fileless (das Flag entsteht
-#      beim Verarbeiten aus /proc/<pid>/exe, SCHEMA.md §3).
-mf = [e for e in execs(C) if e["path"].startswith("/memfd:")]
+# K12: memfd/fileless. Korrigiert: `execveat` mit AT_EMPTY_PATH meldet den
+#      Pfad als /dev/fd/N (gleicher Mechanismus wie K18), nicht /memfd:…
+#      Erkannt wird fileless deshalb am Flag aus /proc/<pid>/exe (memfd_noexec=0,
+#      die Ausführung ist erlaubt). Nutzlast PAY_C lebt 3 s.
+mf = [e for e in execs(C) if e["path"].startswith("/dev/fd/") and "fileless" in flags(e)]
 emit(12, "PASS" if (mf and "fileless" in flags(mf[0]) and "deleted" not in flags(mf[0])
                     and mf[0].get("hash_state") == "ok"
                     and mf[0].get("sha256") == H_SLEEP)
