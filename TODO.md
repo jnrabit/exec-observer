@@ -224,6 +224,12 @@ Statusbegriffe:
   KEINE Code-Änderung bis zur Klärung; Entscheidungs-Experiment: KEEP=1-Lauf
   auf s2, dann Strom-Zeilen vs. `geschrieben`, Strom-lost vs. `lost`,
   `.err` auf Fehler prüfen.
+- Lauf 12.10. (vierter `over`-Lauf): s1/s3 exakt (PASS), s2/s4 exakt −1.
+  Code-Revision: genau 2 Drain-Stellen (beide verarbeiten jedes Item),
+  je 1× `count_seen`/`count_drop`, jeder `process()`-Fehler hinterlässt
+  „übersprungen“ in stderr — kein weiterer stiller Pfad im Modell.
+  Daher: Mechanismus weiter unbekannt; das KEEP=1-Experiment (s. oben)
+  bleibt entscheidend. Keine Toleranz eingebaut.
 - Dabei nebenbei belegt: dumpable/setuid brauchen `SYS_PTRACE` (DESIGN
   nachgetragen); Fall-a-Fehlermeldung nennt jetzt die `SEEN`-Map.
 - Wichtig: `ONLY_CASE=`/`MATRIX_BPF_TEST=` via `sudo` fallen weg (env_reset);
