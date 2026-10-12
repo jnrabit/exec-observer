@@ -236,6 +236,24 @@ nebeneinander: Post-Converge-Ankunft, Senken-Schreibfehler, Consumer-Seite.
 Diskriminierend ist ausschließlich das KEEP=1-Experiment (Strom-Zeilen vs.
 `geschrieben`, Strom-`lost` vs. `lost`, `.err`-Grep) — alles andere ist
 derzeit Meinung, inklusive meiner eigenen Interleave-Überlegung.
+
+### Nachgereicht: aya-RingBuf-Audit (vorbestehende Schicht, kein eigener Code)
+
+Anlass: Der Fehler könnte vor dem eigenen Einsatzzeitpunkt in
+nicht-verifizierten Grundlagen sitzen. Geprüft: `aya 0.14`
+`maps/ring_buf.rs` (`ProducerData::next`, `read_item`, `consume`).
+
+- `Item::Discard` wird still übersprungen — korrekt, denn das sind NUR
+  unsere eigenen `entry.discard(0)`-Reservierungen, und jede davon zählt der
+  Wrapper in DROPS (Erhaltung intakt).
+- `Item::Busy` liefert `None` („sieht leer aus“), verbraucht aber nichts;
+  der Konvergenz-Drain holt solche Einträge in der nächsten Runde. Einzige
+  Lücke: busy-zum-Abbruchzeitpunkt (nachgewiesen nur als Möglichkeit, kein
+  Beleg).
+- Stilles Überspringen gültiger Einträge gibt es im Consumer nicht;
+  Producer-Seite (`reserve`/`submit`/`discard`) kennt nur Zählbares.
+- Damit ist die Bibliothek als stille Verlustquelle entlastet; Kernel-Seite
+  (`ringbuf.c`) bleibt Annahme (keine Quellen installiert).
 - Dabei nebenbei belegt: dumpable/setuid brauchen `SYS_PTRACE` (DESIGN
   nachgetragen); Fall-a-Fehlermeldung nennt jetzt die `SEEN`-Map.
 - Wichtig: `ONLY_CASE=`/`MATRIX_BPF_TEST=` via `sudo` fallen weg (env_reset);
