@@ -1,7 +1,9 @@
 # TODO – Sitzungsanker exec-observer
 
-Stand: 12. Oktober 2026 (aktualisiert nach Läufe-Auswertung: Locale,
-Überlauf-`.err`, `--caps`-Feature, DESIGN-Belege).
+Stand: 12. Oktober 2026 (nach Ledger-Einführung `bcaa586`, Befehl-Fix).
+Host-Belege: Daemon 86 (87 mit `cap-matrix`), Common 28, Uapi 8; `fmt` sauber.
+Root-Läufe: Matrix Mengen exakt seit Lauf 7; Integration (K23–K27) noch nicht
+vollständig gelaufen.
 Prüfung: lesend als normaler Nutzer, keine Ausführung, kein `sudo`.
 
 Statusbegriffe:
@@ -196,7 +198,7 @@ Statusbegriffe:
   target-Kommentar, setpriv Systemstufe, Pfad+uid-Filter).
 - TESTS a–d und B1–B6 in `tests/integration.sh` geschrieben (K23–K27, Phasen
   H/I, private Kopien, Builtin-Waits, CTX-Fehlerkontext).
-- Host-Belege grün: Daemon 82, Common 28, uapi 8 Tests; `bash -n` sauber;
+- Host-Belege (Stand jetzt): Daemon 86, Common 28, uapi 8; `bash -n` sauber;
   Python-Auswertung per synthetischen Senken geprüft (K8/K9/K13/K23–K27 PASS).
 - Offen: kompletter Root-Lauf (`sudo tests/integration.sh`,
   `sudo tests/cap-matrix.sh`).
@@ -287,3 +289,15 @@ nicht-verifizierten Grundlagen sitzen. Geprüft: `aya 0.14`
   nachgetragen); Fall-a-Fehlermeldung nennt jetzt die `SEEN`-Map.
 - Wichtig: `ONLY_CASE=`/`MATRIX_BPF_TEST=` via `sudo` fallen weg (env_reset);
   Aufruf mit `sudo env ...`.
+
+## Ledger (Ossifikat, projektlokal)
+
+- `ledger/ossifikat/` ist eine eingefrorene Kopie des eigenen Pakets (`bcaa586`).
+  Änderungen am Kern in `collect2` ziehen nicht automatisch nach.
+- Seed: `python3 ledger/seed.py` (40 Staging-Triples, DB `ledger/data/`, gitignored).
+- Review (Veto): `PYTHONPATH=ledger python3 -m ossifikat.cli review --db ledger/data/ossifikat.db`
+- Offen: Review durch Nutzer. Versuchsbewertung nach zwei Runden (Kriterien
+  vorab festgelegt): (a) Falsifikation landet als Retract, ohne dass Markdown
+  zuerst angefasst wird; (b) eine `query_at`-Frage ("Was galt vor Lauf 7 als
+  belegt?") ist beantwortbar; (c) Pflegeaufwand bleibt unter dem der Dateien.
+  Bei Nichterfüllung: Versuch beenden, Retract-Geschichte bleibt als Beleg.

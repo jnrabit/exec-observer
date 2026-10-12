@@ -2,7 +2,7 @@
 
 Gebrauch (menschliches Gate bleibt!), aus dem Repo-Wurzelverzeichnis:
     python3 ledger/seed.py                 # DB: ledger/data/ossifikat.db
-    python3 -m ossifikat.cli review --db ledger/data/ossifikat.db
+    PYTHONPATH=ledger python3 -m ossifikat.cli review --db ledger/data/ossifikat.db
 
 Review-Ermüdungs-Design:
 - ALLES landet in Staging, nichts wird bestätigt (kein stilles Vergiften).
@@ -98,7 +98,7 @@ def main() -> None:
             )
         )
     print(f"{len(ids)} Triples in Staging gelegt (DB: {args.db})")
-    print("Weiter mit: python3 -m ossifikat.cli review --db " + args.db)
+    print("Weiter mit: PYTHONPATH=ledger python3 -m ossifikat.cli review --db " + args.db)
     store.close()
 
 
