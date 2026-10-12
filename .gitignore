@@ -5,3 +5,4 @@
 
 # Laufzeit-Log aus abgebrochenen Daemonläufen (kein Quellartefakt)
 exec.log
+ledger/data/
