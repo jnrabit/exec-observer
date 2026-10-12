@@ -623,14 +623,18 @@ done
 # scheitert ohne CAP_BPF. Ergebnis nur MESSUNG (INFO), kein Urteil – die Menge
 # bleibt bis zum Ergebnis unverändert.
 if [ "${MATRIX_BPF_TEST:-0}" = "1" ]; then
-  log "Punkt-3-Experiment: --caps=ptrace,dac (ohne bpf) …"
-  run_case_caps s1 over_nobpf case_doverflow ptrace,dac
+  case "${ONLY_CASE:-all}" in
+    all|over|over_nobpf)
+      log "Punkt-3-Experiment: --caps=ptrace,dac (ohne bpf) …"
+      run_case_caps s1 over_nobpf case_doverflow ptrace,dac
+      ;;
+  esac
 fi
 
 ################################################################################
 # AUSWERTUNG
 ################################################################################
-VERDICT="$( "$PY" - "$FACTS" <<'PYEOF'
+VERDICT="$( "$PY" - "$FACTS" "${ONLY_CASE:-all}" <<'PYEOF'
 import json, sys
 
 facts = {}
@@ -639,6 +643,9 @@ for line in open(sys.argv[1]):
     if "|" in line:
         k, v = line.split("|", 1)
         facts[k] = v
+# ONLY_CASE-Filter (Shell) auch hier bekannt: herausgefilterte Fälle sind
+# „nicht gelaufen“, kein FAIL (Kopfrauch vermeiden).
+only = sys.argv[2] if len(sys.argv) > 2 else "all"
 
 CAP_SETPCAP        = 1 << 8
 CAP_SYS_PTRACE     = 1 << 19
@@ -841,6 +848,10 @@ for key, label, caps in SETS:
             # für s1 – nicht gelaufene Mengen still überspringen, kein FAIL.
             continue
         if not started(key, case):
+            if only != "all" and case != only:
+                # ONLY_CASE-Filter: nicht gelaufen ist kein FAIL (sonst 28
+                # Kopfrauch-Zeilen wie „kein Start“ bei ONLY_CASE=over).
+                continue
             emit("ROW", "FAIL", "%s|%s" % (key + " " + label, case))
             continue
         if case in ("short_true", "short_echo"):
@@ -942,12 +953,16 @@ while IFS='|' read -r no st rest; do
     INFO|info) s=INFO;;  # Messzeile (Punkt 3): weder pass noch fail noch skip
     *)         s=SKIP; SKIP=$((SKIP+1));;
   esac
-  # Zeilen ohne Bewertung (n/a) haben nur Menge|Fall
+  # Zeilen ohne Bewertung (n/a oder nicht gestartet) haben nur Menge|Fall
   if [ "$(printf '%s' "$rest" | awk -F'|' '{print NF}')" -ge 4 ]; then
     IFS='|' read -r menge fall erw gem <<< "$rest"
   else
     IFS='|' read -r menge fall <<< "$rest"
-    erw="n/a (kein CAP_BPF)"; gem="kein Start"
+    case "$st" in
+      n/a|N/A) erw="n/a (kein CAP_BPF)";;
+      *)       erw="– (Fall nicht gestartet)";;
+    esac
+    gem="kein Start"
   fi
   printf '  %-36s %-8s %-42s %-34s %s\n' "$menge" "$fall" "$erw" "$gem" "$s"
 done < <(printf '%s\n' "$VERDICT")

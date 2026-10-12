@@ -218,6 +218,7 @@ zurückgestuft — sie erklärt alles und beweist nichts.
 | 5 (ONLY_CASE) | 0 | −1 | 0 | −1 |
 | 6 (ONLY_CASE) | 0 | 0 | 0 | 0 |
 | 7 (ONLY_CASE, Fix-Binary) | 0 | 0 | 0 | 0 |
+| 8 (ONLY_CASE) | 0 | 0 | 0 | 0 |
 
 (* Lauf 3, s4: Anzeige-Zahlendreher; `ok`+Verhältnis stimmen für −1.)
 0 = Gleichung exakt (Verhältnis 1.000); −1 = genau eins fehlt.
