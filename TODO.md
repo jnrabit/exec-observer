@@ -195,59 +195,47 @@ Statusbegriffe:
 - Offen: kompletter Root-Lauf (`sudo tests/integration.sh`,
   `sudo tests/cap-matrix.sh`).
 
-## Überlauftest-Doppelzählung (lost == 2×) – Ursache behoben, Lauf offen
+## Überlauf-Erhaltung: Befund-Ledger (geordnet, ohne Spekulation)
 
-- Befund (8 Messungen, alle Mengen): `lost` ≈ 2 × (`kernel_seen` − geschrieben).
-- Ursache belegt: Sensor zählte Reservierungs-Drops doppelt (innen in
-  `try_sched_process_exec` UND im Wrapper bei `Err`). Andere Fehlerpfade
-  (discard) einfach; Daemon-Differenz und Per-CPU-Summen je einmal
-  (Hypothesen widerlegt, Codebeleg im Bericht).
-- Fix: inneres `count_drop()` entfernt (Wrapper einzige Zählstelle).
-- Härtung: `CounterDelta` (eine Summe je Lesung, 4 Host-Tests), Shutdown-Drain
-  mit Konvergenz (9 Runden Deckel), Erhaltung exakt ohne Toleranz.
-- Tests melden `lost/(seen−geschrieben)` (gesund 1.000).
-- SEEN: keine Doppelzählung (ein `count_seen()` im Wrapper); Rauschen
-  (System-Execs) fließt konsistent in alle drei Zähler ein.
-- Lauf 12.10. (Matrix, `--features cap-matrix` baut sauber):
-  s1/s3 `over` PASS mit Verhältnis 1.000 (Fix bestätigt);
-  s2/s4 `over` FAIL mit exakt −1 (1381 vs 1382, Verhältnis 0.998).
-  Resthypothesen: In-Flight-Race beim Endauslesen, Senken-Schreibfehler
-  („übersprungen“), oder systematisch — Unterscheidungsexperimente offen
-  (Wiederholung: wandert das −1 oder klebt es an ptrace-Mengen? KEEP=1 +
-  `.err` auf „übersprungen“ prüfen; Strom-Zeilen vs. `geschrieben`).
-- Lauf 12.10. (dritter `over`-Lauf, `ONLY_CASE` griff diesmal):
-  s1/s3 exakt 0, s2/s4 exakt −1 — zum dritten Mal identisch pro Menge.
-  Stochastischer Race damit praktisch ausgeschlossen (P < 0,03 % für jedes
-  feste p). Verbleibende Verdächtige: stiller Consumer-Verlust
-  (aya-RingBuf-Kante unter langsam/schnell-Interleave durch Noise-Hashing
-  nur mit ptrace) oder Senken-Schreibfehler (`.err`-Spur „übersprungen“).
-  KEINE Code-Änderung bis zur Klärung; Entscheidungs-Experiment: KEEP=1-Lauf
-  auf s2, dann Strom-Zeilen vs. `geschrieben`, Strom-lost vs. `lost`,
-  `.err` auf Fehler prüfen.
-- Lauf 12.10. (vierter `over`-Lauf): s1/s3 exakt (PASS), s2/s4 exakt −1.
-  Code-Revision: genau 2 Drain-Stellen (beide verarbeiten jedes Item),
-  je 1× `count_seen`/`count_drop`, jeder `process()`-Fehler hinterlässt
-  „übersprungen“ in stderr — kein weiterer stiller Pfad im Modell.
-  Daher: Mechanismus weiter unbekannt; das KEEP=1-Experiment (s. oben)
-  bleibt entscheidend. Keine Toleranz eingebaut.
-- Lauf 12.10. (fünfter `over`-Lauf, ONLY_CASE): s1/s3 exakt, s2/s4 exakt −1.
-  Vollständige Pfad-Enumeration: Submit-Seite kann nicht brechen (jedes
-  gesendete Ereignis wird geschrieben); Drain-Seite vollständig bis auf
-  Post-Converge-Ankünfte; Emit-Seite nur mit `.err`-Spur. Verbleibend:
-  Post-Converge-Ankunft (ggf. durch Scheduler-Verdrängung verbreitert) oder
-  Senken-Schreibfehler. Die ptrace-Korrelation des −1 bleibt unerklärt —
-  Datensatz statt Code-Änderung: KEEP=1-Lauf auf s2 mit den drei Vergleichen
-  (Strom vs. stats) plus `.err`-Grep.
-- Lauf 12.10. (sechster `over`-Lauf): ALLE VIER Mengen exakt (PASS, 1.000).
-  Das −1 ist damit intermittierend, aber mengenkorreliert (5× s2/s4, 0× s1/s3).
-  Neue Ableitung: `written` ist in allen vier Mengen IDENTISCH (759) — der Ring
-  steht bei CONT immer exakt voll (744) plus deterministische Nachzügler
-  (sleep + Harness ≈ 15); nur das Rauschen variiert. Führende Hypothese jetzt:
-  interleave-sensitiver Consumer-Verlust (aya-RingBuf-Kante), ausgelöst durch
-  langsame Noise-Hashes nur mit ptrace — deterministisch genug zum Kleben,
-  selten genug zum Aussetzen. KEIN Code-Change; entscheidend bleibt das
-  KEEP=1-Experiment (Strom vs. stats ×3, `.err`-Grep). Bei Bedarf danach:
-  `gedraint`-Diagnosezähler (Drain-Erfolge in --stats) zur Schichttrennung.
+Methode: Jede Zeile braucht einen Beleg oder das Etikett Annahme. Die
+Interleave-Hypothese aus dem vorigen Stand wird hiermit auf Annahme
+zurückgestuft — sie erklärt alles und beweist nichts.
+
+### Gemessen (over-Fall, `geschrieben+lost` vs. `kernel_seen`)
+
+| Lauf | s1 | s2 | s3 | s4 |
+|---|---|---|---|---|
+| 1 (Matrix) | 0 | −1 | 0 | −1 |
+| 2 (Matrix) | 0 | −1 | 0 | −1 |
+| 3 (ONLY_CASE) | 0 | −1 | 0 | −1* |
+| 4 (ONLY_CASE) | 0 | −1 | 0 | −1 |
+| 5 (ONLY_CASE) | 0 | −1 | 0 | −1 |
+| 6 (ONLY_CASE) | 0 | 0 | 0 | 0 |
+
+(* Lauf 3, s4: Anzeige-Zahlendreher; `ok`+Verhältnis stimmen für −1.)
+0 = Gleichung exakt (Verhältnis 1.000); −1 = genau eins fehlt.
+
+### Bewiesen (Codebeleg)
+
+- Doppelzählung behoben und bestätigt (s1/s3-Verhältnis 1.000 statt 2.000).
+- Submit-Seite kann die Gleichung nicht brechen: jedes gesendete Ereignis
+  wird genau einmal geschrieben (Pfad-Enumeration im Code).
+- Daemon-Differenzen und Per-CPU-Summen je genau einmal (kein Faktor 2).
+- Jeder `process()`-Fehler hinterlässt „übersprungen“ in stderr.
+- BPF-Laufzeit widerlegt (`over_nobpf`: null Caps, volle Funktion, exakt).
+
+### Bewiesen falsch (durch Lauf 6)
+
+- „Deterministischer Zählfehler“ (wäre immer da).
+- „Reiner µs-Zufalls-Race mit kleiner Trefferquote“ (träfe nicht 5× nur s2/s4).
+
+### Offen (genau eine Frage, keine Theorie)
+
+Wo bleibt in s2/s4-Läufen 1–5 je ein Versuch? Kandidaten unbewertet
+nebeneinander: Post-Converge-Ankunft, Senken-Schreibfehler, Consumer-Seite.
+Diskriminierend ist ausschließlich das KEEP=1-Experiment (Strom-Zeilen vs.
+`geschrieben`, Strom-`lost` vs. `lost`, `.err`-Grep) — alles andere ist
+derzeit Meinung, inklusive meiner eigenen Interleave-Überlegung.
 - Dabei nebenbei belegt: dumpable/setuid brauchen `SYS_PTRACE` (DESIGN
   nachgetragen); Fall-a-Fehlermeldung nennt jetzt die `SEEN`-Map.
 - Wichtig: `ONLY_CASE=`/`MATRIX_BPF_TEST=` via `sudo` fallen weg (env_reset);
