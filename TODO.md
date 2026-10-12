@@ -230,6 +230,14 @@ Statusbegriffe:
   „übersprungen“ in stderr — kein weiterer stiller Pfad im Modell.
   Daher: Mechanismus weiter unbekannt; das KEEP=1-Experiment (s. oben)
   bleibt entscheidend. Keine Toleranz eingebaut.
+- Lauf 12.10. (fünfter `over`-Lauf, ONLY_CASE): s1/s3 exakt, s2/s4 exakt −1.
+  Vollständige Pfad-Enumeration: Submit-Seite kann nicht brechen (jedes
+  gesendete Ereignis wird geschrieben); Drain-Seite vollständig bis auf
+  Post-Converge-Ankünfte; Emit-Seite nur mit `.err`-Spur. Verbleibend:
+  Post-Converge-Ankunft (ggf. durch Scheduler-Verdrängung verbreitert) oder
+  Senken-Schreibfehler. Die ptrace-Korrelation des −1 bleibt unerklärt —
+  Datensatz statt Code-Änderung: KEEP=1-Lauf auf s2 mit den drei Vergleichen
+  (Strom vs. stats) plus `.err`-Grep.
 - Dabei nebenbei belegt: dumpable/setuid brauchen `SYS_PTRACE` (DESIGN
   nachgetragen); Fall-a-Fehlermeldung nennt jetzt die `SEEN`-Map.
 - Wichtig: `ONLY_CASE=`/`MATRIX_BPF_TEST=` via `sudo` fallen weg (env_reset);
