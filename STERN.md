@@ -44,6 +44,20 @@ ihren eigenen Diskriminator (nicht: „passt zum Gesamtbild“). Eine neue
 Beobachtung bricht genau die Speiche, die sie betrifft — der Rest des Sterns
 bleibt stehen.
 
+## Rotation: eine Nabe gleichzeitig
+
+Der Stern rotiert mit der Fragestellung — aber nie mit zwei Naben auf einmal
+(zwei Mitten wären wieder „klingt nach allem“). Rotation ist explizit: Wer die
+Nabe wechselt, benennt die neue Mitte und ihre Speichen; die alte Rotation
+bleibt als Abschnitt erhalten.
+
+- **Aktive Nabe: Erhaltungsgleichung** (dieser Stern; Test ausstehend, s. unten).
+- Vorgeschlagene Naben (inaktiv, je ein eigener Abschnitt bei Bedarf):
+  - *Minimale Capability-Menge* — Speichen: BPF-Load, ptrace, dac, perfmon,
+    Bounding-Regeln. Rotiert, sobald über die Laufzeitmenge entschieden wird.
+  - *exe_ino/exe_size befüllt* — Speichen: BTF-Felder, Sensor-Lesung,
+    Daemon-Vergleich, Phase H. Rotiert, sobald K23/K24 den Laufzeitbeleg liefern.
+
 ## Test des Sterns (ausstehend)
 
 Der Stern beweist sich, indem er eine Vorhersage über neue Daten macht:
