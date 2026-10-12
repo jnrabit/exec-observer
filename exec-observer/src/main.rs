@@ -1745,10 +1745,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(err.into());
         }
         if ret > 0 && (pfd.revents & libc::POLLIN) != 0 {
-            while let Some(item) = events.next() {
-                if STOP.load(Ordering::SeqCst) {
+            // Stopp WIRD VOR dem Holen geprüft, nicht danach: Die alte
+            // Reihenfolge (`while let Some` + Abbruch innen) verwarf ein
+            // bereits geholtes, aber unverarbeitetes Ereignis stillschweigend
+            // (gezählt in SEEN, nie geschrieben, nie in DROPS) – exakt die
+            // Signatur des gesuchten −1. Ein nach TERM noch verarbeitetes
+            // Ereignis ist dagegen harmlos (es wird gezählt).
+            while !STOP.load(Ordering::SeqCst) {
+                let Some(item) = events.next() else {
                     break;
-                }
+                };
                 let bytes: &[u8] = &item;
                 match parse_exec_event(bytes) {
                     Ok(ev) => {

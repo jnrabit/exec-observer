@@ -237,6 +237,22 @@ Diskriminierend ist ausschließlich das KEEP=1-Experiment (Strom-Zeilen vs.
 `geschrieben`, Strom-`lost` vs. `lost`, `.err`-Grep) — alles andere ist
 derzeit Meinung, inklusive meiner eigenen Interleave-Überlegung.
 
+### Stärkste Hypothese (falsifizierbar durch Rerun, kein Code-Raten mehr)
+
+Beim Gegenlesen gefunden und sofort behoben (Hauptschleife, ererbter
+Flüchtigkeitsfehler): `while let Some(item) = next()` + Abbruch *nach* dem
+Holen verwarf ein bereits geholtes, unverarbeitetes Ereignis still (in SEEN,
+nie geschrieben, nie in DROPS). Kausalkette zum −1: Vor `stop_daemon_now`s
+TERM spawnt `run_case` deterministisch ~4 Harness-Prozesse (tr/cut/head);
+mit ptrace drainen diese langsam (Hash-Versuche an lebenden Zielen), ohne
+schnell. Trifft TERM mitten im Drain mit ≥2 Items Rest, geht exakt EINS
+verloren — der Rest wird vom Konvergenz-Drain gerettet. Das erklärt Menge
+(ptrace-Korrelation über Drain-Geschwindigkeit), Ausmaß (genau 1) und
+Lautlosigkeit — und Lauf 6 als Scheduling-Jitter. Fix: Stopp *vor* dem Holen
+prüfen (`while !STOP` + `let-else`); danach kann ein −1 nicht mehr von hier
+kommen. Falsifikation: `ONLY_CASE=over`-Rerun — s2/s4 grün ⇒ bestätigt;
+−1 bleibt ⇒ Hypothese tot, zurück zum KEEP=1-Experiment.
+
 ### Nachgereicht: aya-RingBuf-Audit (vorbestehende Schicht, kein eigener Code)
 
 Anlass: Der Fehler könnte vor dem eigenen Einsatzzeitpunkt in

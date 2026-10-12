@@ -327,10 +327,13 @@ Zuordnung der Auftragsnummern zu den Prüfungen in `tests/integration.sh`
 `Host` = `cargo test` (ohne Root), `Integration` = eines der Skripte
 (benötigt Root für den eBPF-Load), `ungeprüft` = es gibt dafür keinen Beleg.
 
-Stand über alle Zeilen: **alle Integrationsprüfungen geschrieben, keine mit
-sudo gelaufen** (Root-Lauf fehlt weiter). Die Hilfsprogramme und die
-Auswerte-Logik wurden als normaler Nutzer verifiziert; die Capability-Fälle
-darüber hinaus offline gegen synthetische `/proc`-Werte geprüft.
+Stand über alle Zeilen: **cap-matrix.sh mehrfach mit sudo gelaufen und grün**
+(Masken a/b/e/f, Verhaltensmatrix s1–s4; Details unten);
+`tests/integration.sh` lief beim Nutzer (Befund A stammt aus einer
+Phase-D-Senke), seine Matrix wurde hier nicht protokolliert —
+Integrations-Zeilen gelten daher als geschrieben + teilweise gelaufen,
+nicht als grün belegt. Host-Belege: uapi 8, common 28, Daemon 86–87 Tests,
+`bash -n` sauber, Auswerte-Logik per synthetischen Senken geprüft.
 
 Zur Nummerierung: die internen K-Nummern stammen aus dem ersten Auftrag
 (K1–K8 = Kriterien 1–8) und wurden im zweiten Auftrag für die schärferen
@@ -343,47 +346,50 @@ fehlgeschlagenes Exec).
 
 | Auftrag | Kriterium | interner K | Beleg | Stand |
 |---|---|---|---|---|
-| 1 | `start` v=2, `seq=0`, mit `mid`+`kernel`; `stop` mit gleicher `mid` | K1 | Integration | geschrieben, nicht gelaufen |
-| 2 | `seq` lückenlos ab 0 (Kopf-Reihenfolge) | K2 | Integration | geschrieben, nicht gelaufen |
-| 3 | Ereignis-Zeilen tragen `pid`…`flags`, mit geschlossenen Vokabularen (`hash_state`, `sha256` null-oder-64-hex, `flags` inkl. `fd_exec`) | K3 | Integration | Prüfung bewusst zustandsunabhängig (gilt für lebende wie kurzlebige Ziele) |
-| 4 | `execve`-Zeilen: `uid`≠0, `argc` korrekt | K4 | Integration | geschrieben, nicht gelaufen |
-| 5 | Nicht-Hauptthread ruft `execve`: genau eine Zeile, `pid == TGID`, `argc` korrekt | K5 | Integration | geschrieben, nicht gelaufen; Ende-zu-Ende nur im Root-Lauf, `group_leader`-Identität (§6) |
-| 6 | Zwei Threads gleichzeitig: je Zeile `argc=2`, `pid == TGID`, keine falsche Zeile | K6 | Integration | geschrieben, nicht gelaufen |
-| 7 | Fehlgeschlagenes `execve`: kein Ereignis, Daemon lebt weiter | K7 | Integration | geschrieben, nicht gelaufen |
-| 8 | `sha256` = `sha256sum(/bin/sleep)` (64 hex), `hash_state: ok` für Zielprozesse fremder uid | K8 | Integration | Ziel lebt (`/bin/sleep 3`) – sonst `gone` (§6); benötigt `CAP_SYS_PTRACE` (cap-matrix b/e) |
+| 1 | `start` v=2, `seq=0`, mit `mid`+`kernel`; `stop` mit gleicher `mid` | K1 | Integration | geschrieben; Root-Lauf nicht protokolliert |
+| 2 | `seq` lückenlos ab 0 (Kopf-Reihenfolge) | K2 | Integration | geschrieben; Root-Lauf nicht protokolliert |
+| 3 | Ereignis-Zeilen tragen `pid`…`flags`, mit geschlossenen Vokabularen (`hash_state` inkl. `superseded`, `sha256` null-oder-64-hex, `flags` inkl. `fd_exec`) | K3 | Integration | Prüfung bewusst zustandsunabhängig (gilt für lebende wie kurzlebige Ziele) |
+| 4 | `execve`-Zeilen: `uid`≠0, `argc` korrekt (private Kopie) | K4 | Integration | geschrieben; Root-Lauf nicht protokolliert |
+| 5 | Nicht-Hauptthread ruft `execve`: genau eine Zeile, `pid == TGID`, `argc` korrekt | K5 | Integration | geschrieben; Root-Lauf nicht protokolliert; `group_leader`-Identität (§6) |
+| 6 | Zwei Threads gleichzeitig: je Zeile `argc=2`, `pid == TGID`, keine falsche Zeile | K6 | Integration | geschrieben; Root-Lauf nicht protokolliert |
+| 7 | Fehlgeschlagenes `execve`: kein Ereignis, Daemon lebt weiter | K7 | Integration | geschrieben; Root-Lauf nicht protokolliert |
+| 8 | `sha256` = Kopie-Hash (64 hex), `hash_state: ok` für private Zielkopie fremder uid, genau 2 Zeilen | K8 | Integration | Private Kopie (B1/B2), exakter Pfad + uid; benötigt `CAP_SYS_PTRACE` (cap-matrix b/e) |
 
 ### 7.2 Auftrag 2 (mit den Entscheidungen) – Kriterien 9 bis 14
 
 | Auftrag | Kriterium | interner K | Beleg | Stand |
 |---|---|---|---|---|
-| 9 | Nicht-Hauptthread ruft `execve`; genau eine Zeile; `argc`; `pid == TGID`; Zusatz: zwei Threads gleichzeitig | K5, K6 | Integration | geschrieben, nicht gelaufen; `argc` hängt an der `group_leader`-Identität (§6) |
-| 10 | Fehlgeschlagenes `execve` ohne Zeile; nächstes Exec mit richtigem `argc`; Zusatz: Stale-`ARGS`/PID-Reuse darf nie falsches `argc` liefern | K7 + `resolve_argc` | Host (uapi, grün) + Integration | `resolve_argc` host-geprüft (gültig/veraltet/fehlend/Null-Edge); K7 geschrieben, nicht gelaufen; `HashState::Reused` **ungeprüft** (siehe 7.3) |
-| 11 | `argc`-Randfälle: `n=0`; `Limit-1`/`Limit`/`Limit+1`; `n=100000` | K15, K16, K17 | Integration | geschrieben, nicht gelaufen; Helfer verifiziert |
-| 12a | `execveat` auf memfd → `fileless` (ohne `deleted`), `hash_state: ok`, `sha256` = Original | K12 | Integration | memfd enthält eine Kopie von `/bin/sleep` (lebt), sonst nicht beobachtbar (§6) |
-| 12b | Gelöschte Datei → `deleted`, nicht `fileless`, Hash = Original | K18 | Integration | Ziel `/bin/sleep 3` (lebt); Helfer verifiziert |
-| 13 | Ringpuffer-Überlauf → `lost` mit korrekter Differenz | K13 | Integration | Phase F erzeugt Überlauf deterministisch per `kill -STOP`/`kill -CONT` (1200 execs ≫ ~744 Ringplätze); erwartet `lost.count ≥ 1` und weniger `exec`-Zeilen – geschrieben, nicht gelaufen (vorher `SKIP`) |
-| 14 | `kill -9`: letzte Zeile valides JSON, kein `stop`; zusätzlich K14b: der getroffene Prozess ist wirklich fort | K14, K14b | Integration | geschrieben, nicht gelaufen; K14b prüft `kill -0` auf die Daemon-PID (kein Waisenprozess mehr) |
+| 9 | Nicht-Hauptthread ruft `execve`; genau eine Zeile; `argc`; `pid == TGID`; Zusatz: zwei Threads gleichzeitig | K5, K6 | Integration | geschrieben; Root-Lauf nicht protokolliert; `argc` hängt an der `group_leader`-Identität (§6) |
+| 10 | Fehlgeschlagenes `execve` ohne Zeile; nächstes Exec mit richtigem `argc`; Zusatz: Stale-`ARGS`/PID-Reuse darf nie falsches `argc` liefern | K7 + `resolve_argc` | Host (uapi, grün) + Integration | `resolve_argc` host-geprüft (gültig/veraltet/fehlend/Null-Edge); K7 geschrieben, Root-Lauf nicht protokolliert; `HashState::Reused` **ungeprüft** (siehe 7.3) |
+| 11 | `argc`-Randfälle: `n=0`; `Limit-1`/`Limit`/`Limit+1`; `n=100000` | K15, K16, K17 | Integration | geschrieben, Root-Lauf nicht protokolliert; Helfer verifiziert |
+| 12a | `execveat` auf memfd → `fileless` (ohne `deleted`), `hash_state: ok`, `sha256` = Nutzlast-Hash | K12 | Integration | Private Nutzlast (`PAY_C`, lebt 3 s), sonst nicht beobachtbar (§6) |
+| 12b | Gelöschte Datei → `deleted`, nicht `fileless`, Hash = Kopie-Hash | K18 | Integration | Private Kopie via `EXEC_CASES_TMPDIR` (lebt); Helfer verifiziert |
+| 13 | Ringpuffer-Überlauf → Erhaltung `geschrieben + lost == kernel_seen` (B4), `lost ≥ 1` | K13 | Integration + cap-matrix Fall d | cap-matrix: s1/s3 PASS (Verhältnis 1.000); s2/s4 exakt −1 (sechs Läufe) — offen, KEEP=1-Experiment ausstehend; Integration: geschrieben, Laufstand nicht protokolliert |
+| 14 | `kill -9`: letzte Zeile valides JSON, kein `stop`; zusätzlich K14b: der getroffene Prozess ist wirklich fort | K14, K14b | Integration | geschrieben; Nutzer-Befund A stammt aus einer Phase-D-Senke (kill -9-Fall lief); Matrix nicht protokolliert; K14b prüft `kill -0` auf die Daemon-PID (kein Waisenprozess mehr) |
 
 ### 7.3 Weitere Prüfungen (nicht Auftrags-Kriterium) – und die offenen Zeilen
 
 | Prüfung | interner K | Beleg | Stand |
 |---|---|---|---|
-| Capabilities: Mindestmenge nach dem Load, fail-closed beim Load, fremde exe lesbar / nicht lesbar | cap-a … cap-e | Integration (`tests/cap-matrix.sh`), zusätzlich Host-Test `btf::parses_sysfs_and_finds_offsets` prüft `task_struct.group_leader` | **geschrieben; im Root-Lauf hat nur der Harness gefehlt** – behoben: (1) `PR_CAPBSET_DROP` setzt `CAP_SETPCAP` voraus, ohne das verbietet der Kernel das Prunen (EPERM); (2) `caps_of` suchte die Schlüssel mit Doppelpunkt, speicherte sie aber ohne → jede Messung war `0x0`; (3) `CapBnd` ist nur noch Obergrenke (`⊇` Ziel), nicht Gleichheit. Die echten Laufwerte (Rohbeleg) zeigen in allen vier Fällen die korrekte Reduktion; über `sudo tests/cap-matrix.sh` final zu bestätigen |
+| Capabilities: Mindestmenge nach dem Load, fail-closed beim Load, fremde exe lesbar / nicht lesbar | cap-a … cap-e | `tests/cap-matrix.sh` (Root-Läufe, mehrfach grün) | Masken a/b/e/f PASS; Verhalten s1–s4 grün (a1000/aroot/b0711/setuid/dump); `over` s1/s3 PASS, s2/s4 −1 (offen); Fall c/d2 deaktiviert; Host-Tests für Parser/Zielmenge grün |
 | `HashState::Reused` (PID wiederverwendet nach dem Hashen) | K10 | **ungeprüft** | `SKIP`; nur manuell reproduzierbar (host-seitig ist nur `resolve_argc` geprüft) |
-| Tiefer Pfad → `path_trunc` (≤ 256 B) | K11 | Integration | geschrieben, nicht gelaufen |
-| Hash-Cache → `cached`, identischer `sha256` | K9 | Integration | geschrieben, nicht gelaufen; Ziel `/bin/sleep 3` (lebt) |
-| Kurzlebige Ziele (200 × `/bin/true`): Mischung `ok`/`gone`, **ohne Bewertung** | K20 | Integration | reine Info-Zeile, zählt nicht in pass/fail/skip |
-| Nach dem Lauf bleibt kein `exec-observer`-Prozess und kein `/tmp/exec-observer-*` übrig | (Schlusspunkt) | Integration + `tests/temp-selftest.sh` (ohne root) | Selbsttest grün; Schlussprüfung in beiden Skripten geschrieben |
-| Auswertung selbst: scheitert der Auswerte-Block, darf der Lauf nicht grün aussehen | (Wächter) | beides | rc!=0 oder leere Matrix → eigener FAIL + Exit != 0 (vorher: leer und `[ "$FAIL" -eq 0 ]` → grün) |
-| `ts`/`seq` nicht zueinander monoton; Import ordnet nach `seq` | – | Host (`cargo test` in `exec-observer-common`, 24 Tests) | grün |
+| `HashState::Superseded` (spätere Exec-Stufe derselben PID) + Kette setpriv→Helfer→Ziel | K23, K24 | Integration Phase H (STOP-deterministisch) | geschrieben; Root-Lauf ausstehend (beweist zugleich das `mm->exe_file`-Timing) |
+| Dateisystem-Matrix: btrfs-Kopie, `/usr/bin/sleep`, tmpfs-Kopie → je `ok` | K25, K26, K27 | Integration Phase I | geschrieben; Root-Lauf ausstehend |
+| Root-Gegenprobe (`linger`, genau 1 Zeile, uid 0, argc 3) | K19 | Integration Phase A2 | geschrieben; Root-Lauf ausstehend |
+| `HashState::Reused` (PID wiederverwendet nach dem Hashen) | K10 | **ungeprüft** | `SKIP`; nur manuell reproduzierbar (host-seitig ist nur `resolve_argc` geprüft) |
+| Tiefer Pfad → `path_trunc` (≤ 256 B) | K11 | Integration | geschrieben; Root-Lauf nicht protokolliert |
+| Hash-Cache → 1. Start ohne, 2. mit `cached`, identischer `sha256` (private Kopie) | K9 | Integration | geschrieben; Root-Lauf nicht protokolliert |
+| Kurzlebige Ziele (je 200 × zwei private Kopien): Zustandsmischung, **ohne Bewertung** | K20 | Integration | reine Info-Zeile, zählt nicht in pass/fail/skip |
+| Nach dem Lauf bleibt kein `exec-observer`-Prozess übrig; Temps (mktemp + `.it-btrfs.*`, außer `KEEP=1`) sind abgeräumt | (Schlusspunkt) | Integration + `tests/temp-selftest.sh` (ohne root) | Selbsttest grün; Schlussprüfung in beiden Skripten geschrieben |
+| Auswertung selbst: scheitert der Auswerte-Block, darf der Lauf nicht grün aussehen | (Wächter) | beides | rc!=0 oder leere Matrix → UNVOLLSTÄNDIG (Exit 2); bewertete Fehler → Exit 1 |
+| `ts`/`seq` nicht zueinander monoton; Import ordnet nach `seq` | – | Host (`cargo test` in `exec-observer-common`, 28 Tests) | grün |
 
-Offene Zeilen bewusst benannt: **cap-matrix** (alle Fälle a-e – geschrieben,
-nie gelaufen), **PID-Wiederverwendung** (K10 bleibt `SKIP`, nur `resolve_argc`
-host-geprüft). Der **Überlauf** war offen und ist jetzt gebaut (K13/Phase F,
-`kill -STOP`) – ebenfalls noch nicht gelaufen. Zusätzlich insgesamt:
-**jeder Integrationslauf fehlt** – alle Zeilen „geschrieben, nicht gelaufen".
+Offene Zeilen bewusst benannt: **cap-matrix Fall c/d2** (deaktiviert),
+**PID-Wiederverwendung** (K10 bleibt `SKIP`, nur `resolve_argc` host-geprüft),
+**Überlauf s2/s4** (exakt −1, KEEP=1-Experiment ausstehend),
+**Integration-Matrix** (lief beim Nutzer, aber nicht protokolliert).
 
-Host-Testzahlen (laufend): `exec-observer-uapi` 5, `exec-observer-common` 24,
-`exec-observer` (Daemon) 34 – davon `resolve_argc` als der einzige Host-Beleg
-für Kriterium 10. `ARGC_LIMIT`: **1024**
-(`exec-observer-ebpf/src/main.rs`).
+Host-Testzahlen (laufend): `exec-observer-uapi` 8, `exec-observer-common` 28,
+`exec-observer` (Daemon) 86 (87 mit Feature `cap-matrix`) – davon
+`resolve_argc` als der einzige Host-Beleg für Kriterium 10.
+`ARGC_LIMIT`: **1024** (`exec-observer-ebpf/src/main.rs`).
