@@ -1,5 +1,8 @@
 # Stern statt Liste: Erhaltungsgleichung in der Mitte
 
+**Stand: Entwurf, ungetestet.** Diese Darstellung ist selbst eine Hypothese
+und gilt erst, wenn sie den Test unten besteht.
+
 Nicht linear abgearbeitet, sondern als Abhängigkeitsstern: Die Mitte gilt
 nur, wenn alle Speichen tragen. Status je Speiche: **belegt** (mit Quelle)
 oder **offen** (mit dem einen Experiment, das sie entscheiden würde).
@@ -40,3 +43,23 @@ Falsifizierbarkeit vor Vollständigkeit gilt pro Speiche: Jede Speiche braucht
 ihren eigenen Diskriminator (nicht: „passt zum Gesamtbild“). Eine neue
 Beobachtung bricht genau die Speiche, die sie betrifft — der Rest des Sterns
 bleibt stehen.
+
+## Test des Sterns (ausstehend)
+
+Der Stern beweist sich, indem er eine Vorhersage über neue Daten macht:
+
+```bash
+cargo build -p exec-observer
+gcc -O2 -Wall -Wextra -pthread tests/exec-cases.c -o tests/exec-cases.bin
+sudo tests/integration.sh
+```
+
+Vorhersage: K13 (Phase F) PASS, K23/K24 (Phase H) PASS — und genau dadurch
+kippt ausschließlich die Speiche `exe_ino/exe_size` auf belegt; keine andere
+Speiche darf brechen.
+
+- K23/K24 FAIL ⇒ Speiche `exe_ino/exe_size` falsch (Sensor füllt nicht wie
+  angenommen), Rest des Sterns unberührt.
+- K13 FAIL in Integration ⇒ Speiche Erhaltung/Drain/Stats neu aufmachen.
+- Brechen mehrere unbeteiligte Speichen ⇒ die Stern-Form selbst ist ungeeignet
+  (zurück zur Liste).
