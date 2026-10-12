@@ -86,18 +86,27 @@ def main() -> None:
     args = ap.parse_args()
 
     store = OssifikatStore(args.db)
-    ids = []
+    added, skipped = 0, 0
     for subject, predicate, obj, conf in TRIPLES:
-        ids.append(
-            store.add_staging(
-                subject=subject,
-                predicate=predicate,
-                object=obj,
-                source=SRC,
-                confidence=conf,
-            )
+        # Idempotent: Existiert dieselbe Aussage (gleiche Quelle) schon, nichts
+        # neu anlegen. Ohne diese Prüfung entstünden bei jedem Lauf Duplikate
+        # (add_staging hasht den Zeitstempel mit ein).
+        exists = store.conn.execute(
+            "SELECT 1 FROM triples WHERE subject=? AND predicate=? AND object=? AND source=?",
+            (subject, predicate, obj, SRC),
+        ).fetchone()
+        if exists:
+            skipped += 1
+            continue
+        store.add_staging(
+            subject=subject,
+            predicate=predicate,
+            object=obj,
+            source=SRC,
+            confidence=conf,
         )
-    print(f"{len(ids)} Triples in Staging gelegt (DB: {args.db})")
+        added += 1
+    print(f"{added} neu in Staging, {skipped} schon vorhanden (DB: {args.db})")
     print("Weiter mit: PYTHONPATH=ledger python3 -m ossifikat.cli review --db " + args.db)
     store.close()
 
