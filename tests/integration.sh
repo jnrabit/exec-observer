@@ -195,6 +195,11 @@ new_dir deep            || die "mktemp -d (deep) fehlgeschlagen"
 DEEPROOT="$DIR_PATH"
 new_file argmap         || die "mktemp (argmap) fehlgeschlagen"
 ARGMAP="$FILE_PATH"
+# Fix: Der Helfer (uid 1000) schreibt die Argmap selbst. Ohne chown schlug
+# fopen fehl, der Helfer brach stillschweigend (stderr → /dev/null) vor dem
+# execve ab, und die Argmap blieb leer. Gleiche Behandlung wie argcout.
+chown "$USER_UID:$USER_GID" "$ARGMAP" || die "chown (argmap) fehlgeschlagen"
+chmod 0600 "$ARGMAP"
 new_file argcout        || die "mktemp (argcout) fehlgeschlagen"
 ARGCOUT="$FILE_PATH"
 # Die Ausgabe des unprivilegierten Helfers gehört ihm: Nur so beweist ein
@@ -817,10 +822,12 @@ for ln in open(sys.argv[9]):
 # weil EXEC_CASES_ARGMAP nicht ankam), ist das ein Harness-Fehler, kein
 # Daemon-FAIL – das Ergebnis soll das klar sagen.
 _expected_n = {0, ARGC_LIMIT - 1, ARGC_LIMIT, ARGC_LIMIT + 1, 100000}
-if set(argmap) != _expected_n:
-    emit(15, "FAIL", "Harness: Argmap unvollständig (%s von 5 Fällen) – "
-         "EXEC_CASES_ARGMAP kam nicht an; K15–K17 nicht bewertbar"
-         % len(argmap))
+argmap_ok = set(argmap) == _expected_n
+if not argmap_ok:
+    for _k in (15, 16, 17):
+        emit(_k, "FAIL", "Harness: Argmap unvollständig (%s von 5 Fällen) – "
+             "K15–K17 nicht bewertbar, Ursache im Test, nicht im Daemon"
+             % len(argmap))
 child_out = [ln.strip() for ln in open(sys.argv[10]) if ln.strip()]
 
 def target(n):
@@ -831,27 +838,28 @@ def target(n):
     evs = [e for e in execs(E) if e["pid"] == pid]
     return evs[-1] if evs else None
 
-# K15: n=0 (leeres argv). Erwartung von Hand: Beobachter zählt am
-#      Syscall-Eintritt 0 (kein argc_min); der Kernel fügt danach ein leeres
-#      Argument ein, der Prozess sieht (auf diesem Kernel) argc=1.
-e0 = target(0)
-seen0 = child_out[0].split("=", 1)[1] if child_out else "?"
-emit(15, "PASS" if (e0 and e0["argc"] == 0 and "argc_min" not in flags(e0)) else "FAIL",
-      f"argc n=0: Beobachter argc=0 ohne argc_min; Prozess sieht argc={seen0} (dok. Abweichung)")
+if argmap_ok:
+    # K15: n=0 (leeres argv). Erwartung von Hand: Beobachter zählt am
+    #      Syscall-Eintritt 0 (kein argc_min); der Kernel fügt danach ein leeres
+    #      Argument ein, der Prozess sieht (auf diesem Kernel) argc=1.
+    e0 = target(0)
+    seen0 = child_out[0].split("=", 1)[1] if child_out else "?"
+    emit(15, "PASS" if (e0 and e0["argc"] == 0 and "argc_min" not in flags(e0)) else "FAIL",
+          f"argc n=0: Beobachter argc={e0['argc'] if e0 else None}, argc_min={'argc_min' in flags(e0) if e0 else None}; Prozess sieht argc={seen0} (dok. Abweichung)")
 
-# K16: Limit-1 / Limit / Limit+1 → bis Limit exakt ohne argc_min, darüber
-#      argc = Limit mit argc_min (genau der K1-Grenzfall).
-e_m1, e_l, e_p1 = target(ARGC_LIMIT - 1), target(ARGC_LIMIT), target(ARGC_LIMIT + 1)
-ok16 = (e_m1 and e_m1["argc"] == ARGC_LIMIT - 1 and "argc_min" not in flags(e_m1)
-        and e_l and e_l["argc"] == ARGC_LIMIT and "argc_min" not in flags(e_l)
-        and e_p1 and e_p1["argc"] == ARGC_LIMIT and "argc_min" in flags(e_p1))
-emit(16, "PASS" if ok16 else "FAIL",
-      f"argc n={ARGC_LIMIT-1}/{ARGC_LIMIT}/{ARGC_LIMIT+1}: exakt, exakt, Limit+argc_min")
+    # K16: Limit-1 / Limit / Limit+1 → bis Limit exakt ohne argc_min, darüber
+    #      argc = Limit mit argc_min (genau der K1-Grenzfall).
+    e_m1, e_l, e_p1 = target(ARGC_LIMIT - 1), target(ARGC_LIMIT), target(ARGC_LIMIT + 1)
+    ok16 = (e_m1 and e_m1["argc"] == ARGC_LIMIT - 1 and "argc_min" not in flags(e_m1)
+            and e_l and e_l["argc"] == ARGC_LIMIT and "argc_min" not in flags(e_l)
+            and e_p1 and e_p1["argc"] == ARGC_LIMIT and "argc_min" in flags(e_p1))
+    emit(16, "PASS" if ok16 else "FAIL",
+          f"argc n={ARGC_LIMIT-1}/{ARGC_LIMIT}/{ARGC_LIMIT+1}: gemessen {[e['argc'] if e else None for e in (e_m1,e_l,e_p1)]}, argc_min an n+1={bool(e_p1 and 'argc_min' in flags(e_p1))}")
 
-# K17: n=100000 → der Verifier lehnt nichts ab, die Zeile trägt argc_min.
-e_h = target(100000)
-emit(17, "PASS" if (e_h and e_h["argc"] == ARGC_LIMIT and "argc_min" in flags(e_h)) else "FAIL",
-      f"argc n=100000: Zeile argc={ARGC_LIMIT}+argc_min, kein Verifier-Abbruch")
+    # K17: n=100000 → der Verifier lehnt nichts ab, die Zeile trägt argc_min.
+    e_h = target(100000)
+    emit(17, "PASS" if (e_h and e_h["argc"] == ARGC_LIMIT and "argc_min" in flags(e_h)) else "FAIL",
+          f"argc n=100000: gemessen argc={e_h['argc'] if e_h else None}, argc_min={bool(e_h and 'argc_min' in flags(e_h))}")
 
 # K18 (Kriterium 12b): deleted deterministisch. Die über execveat gestartete
 #      private Kopie war vor dem Exec gelöscht → Flag deleted (nicht fileless),
