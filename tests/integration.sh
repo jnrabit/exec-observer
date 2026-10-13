@@ -377,10 +377,16 @@ start_daemon "$SINK"
 # damit fehlte der Fall "Prozess eines fremden Nutzers" vollständig).
 # Ziele sind private Kopien (B1); Filter treffen exakte Pfade, nie PIDs allein.
 run_user "$H_P" main_exec "$T_A1" a b c >/dev/null 2>&1 || true
-run_user "$H_P" thread_exec "$T_A1" "t1" >/dev/null 2>&1 & THREAD_PID=$!
-wait "$THREAD_PID" 2>/dev/null || true
-run_user "$H_P" two_threads "$T_A2" >/dev/null 2>&1 & TWO_PID=$!
-wait "$TWO_PID" 2>/dev/null || true
+# Fix (K5/K6): Die TGID kommt vom Helfer selbst (EXEC_CASES_PIDFILE, getpid).
+# $! wurde nicht verwendet, weil die Zuordnung dort nicht belegbar war.
+new_file thread_pid && THREAD_PIDFILE="$FILE_PATH" || die "mktemp (thread_pid)"
+new_file two_pid    && TWO_PIDFILE="$FILE_PATH"    || die "mktemp (two_pid)"
+chown "$USER_UID:$USER_GID" "$THREAD_PIDFILE" "$TWO_PIDFILE" || die "chown (pidfiles)"
+chmod 0600 "$THREAD_PIDFILE" "$TWO_PIDFILE"
+EXEC_CASES_PIDFILE="$THREAD_PIDFILE" run_user "$H_P" thread_exec "$T_A1" "t1" >/dev/null 2>&1 || true
+THREAD_PID=$(cat -- "$THREAD_PIDFILE" 2>/dev/null || echo 0)
+EXEC_CASES_PIDFILE="$TWO_PIDFILE" run_user "$H_P" two_threads "$T_A2" >/dev/null 2>&1 || true
+TWO_PID=$(cat -- "$TWO_PIDFILE" 2>/dev/null || echo 0)
 run_user "$H_P" fail_exec "$NONEXEC"      || true
 run_user "$H_P" main_exec "$T_A2" nope >/dev/null 2>&1 || true   # Daemon lebt nach fail_exec weiter
 # Warten urteilt nicht (B5): findet die Ruhe nicht statt, meldet die Auswertung.

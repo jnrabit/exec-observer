@@ -59,6 +59,17 @@ struct thread_args {
     char **argv;
 };
 
+/* PID-Zuordnung ohne $!: Der Helfer schreibt seine TGID (getpid) in die
+ * Datei aus EXEC_CASES_PIDFILE, bevor er Threads startet. */
+static void write_pidfile(void) {
+    const char *pf = getenv("EXEC_CASES_PIDFILE");
+    if (pf == NULL || pf[0] == '\0') return;
+    FILE *f = fopen(pf, "w");
+    if (f == NULL) die("fopen(pidfile)");
+    fprintf(f, "%ld\n", (long)getpid());
+    if (fclose(f) != 0) die("fclose(pidfile)");
+}
+
 static void *thread_main(void *p) {
     struct thread_args *a = (struct thread_args *)p;
     execv(a->argv[0], a->argv);
@@ -100,6 +111,7 @@ int main(int argc, char **argv) {
         if (argc < 3) return 2;
         pthread_t th;
         struct thread_args a = {&argv[2]};
+        write_pidfile();
         if (pthread_create(&th, NULL, thread_main, &a) != 0) die("pthread_create");
         pthread_join(th, NULL);
         return 0; /* erreicht nur, wenn exec im Thread fehlschlug */
@@ -110,6 +122,7 @@ int main(int argc, char **argv) {
         char *av[] = {(char *)(argc >= 3 ? argv[2] : "/bin/sleep"), NULL};
         pthread_t t1, t2;
         struct thread_args a1 = {av}, a2 = {av};
+        write_pidfile();
         if (pthread_create(&t1, NULL, thread_sleep_exec, &a1) != 0) die("pthread_create");
         if (pthread_create(&t2, NULL, thread_sleep_exec, &a2) != 0) die("pthread_create");
         pthread_join(t1, NULL);
