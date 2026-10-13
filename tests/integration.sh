@@ -461,8 +461,13 @@ for n in 0 $((ARGC_LIMIT - 1)) "$ARGC_LIMIT" $((ARGC_LIMIT + 1)) 100000; do
   # ARGCOUT selbst als unprivilegierter Nutzer, nicht die Root-Shell vorab.
   # Kette je Fall (4 Stufen, 1 PID): setpriv → bash → Helfer → Ziel (Helfer
   # selbst, argc_exec re-exec't ihn mit n Argumenten).
-  run_user bash -c 'exec >>"$1" 2>/dev/null; exec "$2" argc_exec "$3" "$2"' _ "$ARGCOUT" "$H_P" "$n" &
-  printf '%s %s\n' "$n" "$!" >>"$ARGMAP"
+  # Fix (PID-Zuordnung): Der Helfer schreibt seine PID selbst in die Argmap
+  # (EXEC_CASES_ARGMAP). Kein $!-Raten mehr von außen.
+  # env setzt die Variable explizit vor setpriv; Annahme, dass setpriv die
+  # Umgebung erbt, ist damit nicht mehr nötig für die Korrektheit der Zuordnung
+  # – ist sie nicht da, schreibt der Helfer nichts, und K15–K17 meldet FAIL
+  # (sichtbar, kein stiller Falsch-PASS).
+  run_user env EXEC_CASES_ARGMAP="$ARGMAP" bash -c 'exec >>"$1" 2>/dev/null; exec "$2" argc_exec "$3" "$2"' _ "$ARGCOUT" "$H_P" "$n" &
   wait "$!" 2>/dev/null || true
 done
 # deleted braucht ein lebendes Ziel: private Kopie im btrfs-Verzeichnis
@@ -808,6 +813,14 @@ for ln in open(sys.argv[9]):
     parts = ln.split()
     if len(parts) == 2:
         argmap[int(parts[0])] = int(parts[1])
+# Harness-Prüfung: Die Argmap muss die fünf Fälle enthalten. Fehlt sie (z. B.
+# weil EXEC_CASES_ARGMAP nicht ankam), ist das ein Harness-Fehler, kein
+# Daemon-FAIL – das Ergebnis soll das klar sagen.
+_expected_n = {0, ARGC_LIMIT - 1, ARGC_LIMIT, ARGC_LIMIT + 1, 100000}
+if set(argmap) != _expected_n:
+    emit(15, "FAIL", "Harness: Argmap unvollständig (%s von 5 Fällen) – "
+         "EXEC_CASES_ARGMAP kam nicht an; K15–K17 nicht bewertbar"
+         % len(argmap))
 child_out = [ln.strip() for ln in open(sys.argv[10]) if ln.strip()]
 
 def target(n):

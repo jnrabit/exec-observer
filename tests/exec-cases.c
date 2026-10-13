@@ -182,6 +182,16 @@ int main(int argc, char **argv) {
             av[i] = (char *)(i == 0 ? prog : "x");
         }
         av[n] = NULL; /* Terminator: genau n Argumente */
+        /* PID-Zuordnung ohne Raten: Der Helfer schreibt SEINE eigene PID
+         * (getpid) direkt vor dem execve in die Argmap. Die Shell-Variante
+         * mit $! war nicht verlässlich (Verschiebung um eine Stufe, s. Lauf). */
+        const char *argmap = getenv("EXEC_CASES_ARGMAP");
+        if (argmap != NULL && argmap[0] != '\0') {
+            FILE *f = fopen(argmap, "a");
+            if (f == NULL) die("fopen(argmap)");
+            fprintf(f, "%ld %ld\n", n, (long)getpid());
+            if (fclose(f) != 0) die("fclose(argmap)");
+        }
         if (setenv("EXEC_CASES_REPORT_ARGV", "1", 1) != 0) die("setenv");
         syscall(SYS_execve, prog, av, environ);
         fprintf(stderr, "argc_exec: n=%ld execve errno=%d\n", n, errno);
